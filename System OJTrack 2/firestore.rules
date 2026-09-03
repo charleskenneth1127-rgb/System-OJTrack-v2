@@ -1,0 +1,124 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isCoordinator() {
+      return isSignedIn() && (getUserData().role == 'coordinator' || getUserData().role == 'admin');
+    }
+
+    function isStudent() {
+      return isSignedIn() && getUserData().role == 'student';
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      // Self-registration is allowed, but a student can never write their own
+      // role to (or keep it at) anything other than 'student' — otherwise a
+      // self-registered account could grant itself coordinator access.
+      allow create: if isCoordinator() ||
+                    (request.auth.uid == userId && request.resource.data.role == 'student');
+      allow update: if isCoordinator() ||
+                    (request.auth.uid == userId && request.resource.data.role == resource.data.role);
+    }
+
+    // Classes
+    match /classes/{classId} {
+      allow read: if isSignedIn();
+      allow write: if isCoordinator();
+    }
+
+    // Students (extended data)
+    match /students/{studentId} {
+      allow read: if isCoordinator() || (isStudent() && studentId == request.auth.uid);
+      allow write: if isCoordinator();
+    }
+
+    // Class join requests (self-service join-by-code, coordinator-approved)
+    match /class_join_requests/{studentUid} {
+      function isValidNewRequest() {
+        return studentUid == request.auth.uid
+              && request.resource.data.studentUid == request.auth.uid
+              && request.resource.data.status == 'pending'
+              && get(/databases/$(database)/documents/classes/$(request.resource.data.classId)).data.joinCode == request.resource.data.joinCode;
+      }
+
+      allow read: if isCoordinator() || (isStudent() && studentUid == request.auth.uid);
+      allow create: if isStudent() && isValidNewRequest();
+      // A student may only resubmit (overwrite) their own doc after a
+      // rejection, to try a different code — approving/rejecting is
+      // coordinator-only.
+      allow update: if isCoordinator() ||
+                    (isStudent() && resource.data.status == 'rejected' && isValidNewRequest());
+      allow delete: if isCoordinator() ||
+                    (isStudent() && studentUid == request.auth.uid && resource.data.status == 'pending');
+    }
+
+    // HTEs
+    match /htes/{hteId} {
+      allow read: if isSignedIn();
+      allow write: if isCoordinator();
+    }
+
+    // Attendance Logs
+    match /attendance_logs/{logId} {
+      allow read: if isCoordinator() || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+      allow update: if isCoordinator();
+    }
+
+    // Reports
+    match /reports/{reportId} {
+      allow read: if isCoordinator() || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+      allow update: if isCoordinator() || (isStudent() && resource.data.studentId == request.auth.uid && resource.data.status == 'pending');
+    }
+
+    // Pre-OJT Documents
+    match /pre_ojt_documents/{docId} {
+      allow read: if isCoordinator() || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+      allow update: if isCoordinator();
+    }
+
+    // Portfolio Items
+    match /portfolio_items/{itemId} {
+      allow read: if isCoordinator() || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+      allow delete: if isStudent() && resource.data.studentId == request.auth.uid;
+    }
+
+    // HTE Evaluation Links (Secure Tokens)
+    match /hte_evaluation_links/{linkId} {
+      allow read: if true; // Public access for the evaluation form to validate token
+      allow write: if isCoordinator();
+    }
+
+    // HTE Evaluations (Public Submission)
+    match /hte_evaluations/{evalId} {
+      allow create: if true; // Public form can submit
+      allow read: if isCoordinator();
+    }
+
+    // Notifications
+    match /notifications/{notifId} {
+      allow read: if isSignedIn() && resource.data.recipientId == request.auth.uid;
+      allow write: if isCoordinator();
+    }
+
+    // System preferences (single doc: settings/global)
+    match /settings/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isCoordinator();
+    }
+  }
+}

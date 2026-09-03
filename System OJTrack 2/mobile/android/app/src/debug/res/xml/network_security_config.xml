@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug-only: allows plain HTTP to the Firebase Local Emulator Suite,
+     reached from the Android emulator via the special host alias 10.0.2.2
+     (see mobile/lib/main.dart). Android 9+ blocks cleartext traffic by
+     default; this does not apply to release builds. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <domain includeSubdomains="true">localhost</domain>
+    </domain-config>
+</network-security-config>

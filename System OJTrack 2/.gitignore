@@ -1,0 +1,23 @@
+# Dependencies (each subproject installs its own)
+node_modules/
+
+# Generated build output
+functions/lib/
+
+# Firebase Emulator Suite logs (regenerated every `firebase emulators:start`)
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+pubsub-debug.log
+database-debug.log
+
+# JVM crash dumps (from the Firestore/Storage rules runtime, e.g. hs_err_pid*.log)
+hs_err_pid*.log
+replay_pid*.log
+*.log
+
+# JetBrains IDE
+.idea/
+
+# Gradle build output that lands outside the redirected buildDir
+mobile/android/build/

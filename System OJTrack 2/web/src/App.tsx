@@ -1,0 +1,2370 @@
+import { useEffect, useMemo, useState } from 'react'
+import type { FormEvent } from 'react'
+import './App.css'
+import Login from './components/Login'
+import EditHoursModal from './components/EditHoursModal'
+import EditClassModal from './components/EditClassModal'
+import CreateClassModal from './components/CreateClassModal'
+import CeacMark from './components/CeacMark'
+import NotificationsBell from './components/NotificationsBell'
+import HteEvaluationForm from './components/HteEvaluationForm'
+import EmptyState from './components/EmptyState'
+import AssignHteModal from './components/AssignHteModal'
+import StudentProfileModal from './components/StudentProfileModal'
+import AttendancePhotoModal from './components/AttendancePhotoModal'
+import ReviewRowList from './components/ReviewRowList'
+import type { ReviewRow } from './components/ReviewRowList'
+import SimpleBarChart from './components/SimpleBarChart'
+import type { BarChartDatum } from './components/SimpleBarChart'
+import type {
+  UserRecord,
+  ClassRecord,
+  ClassJoinRequestRecord,
+  StudentRecord,
+  NotificationRecord,
+  ReportRecord,
+  PreOjtDocumentRecord,
+  AttendanceLogRecord,
+  HteEvaluationLinkRecord,
+  HteEvaluationRecord,
+  HteRecord,
+  SystemPreferencesRecord,
+} from './types'
+import { auth, createCoordinatorAccount, db, generateUniqueJoinCode, studentIdToEmail } from './firebase'
+import { registerPushNotifications } from './push'
+import { avatarColor, classCardStyle, initials } from './utils/avatarStyle'
+import { TERM_OPTIONS } from './constants'
+import { onAuthStateChanged } from 'firebase/auth'
+import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, query, setDoc, updateDoc, where } from 'firebase/firestore'
+
+const modules = [
+  'Dashboard',
+  'Class Management',
+  'Enroll HTE',
+  'HTE Evaluation Results',
+  'Final Assessment & Completion',
+  'SIPP/CHED Report Generation',
+  'Settings/Profile',
+]
+
+// One small stroke icon per sidebar module — same hand-drawn style already
+// used for the topbar's theme toggle / notification bell, kept as plain
+// inline SVG rather than an icon library dependency.
+const moduleIcons: Record<string, React.ReactNode> = {
+  Dashboard: (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.6" stroke="currentColor" strokeWidth="1.8" />
+      <rect x="13" y="3.5" width="7.5" height="7.5" rx="1.6" stroke="currentColor" strokeWidth="1.8" />
+      <rect x="3.5" y="13" width="7.5" height="7.5" rx="1.6" stroke="currentColor" strokeWidth="1.8" />
+      <rect x="13" y="13" width="7.5" height="7.5" rx="1.6" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  ),
+  'Class Management': (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2.5 9L12 4.5L21.5 9L12 13.5L2.5 9Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M6.5 11V16C6.5 16 8.5 18 12 18C15.5 18 17.5 16 17.5 16V11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M21.5 9V15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  ),
+  'Enroll HTE': (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="4.5" y="7" width="11" height="13" rx="1.2" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M15.5 20V4.5C15.5 3.9 15 3.5 14.5 3.5H8.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M19.5 20V10.5C19.5 9.9 19 9.5 18.5 9.5H15.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M7.5 10.5H12.5M7.5 13.5H12.5M7.5 16.5H12.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  ),
+  'HTE Evaluation Results': (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="4.5" y="4" width="15" height="17" rx="2" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M9 3.5H15V6H9V3.5Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M8 12L10.5 14.5L16 9" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  'Final Assessment & Completion': (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="11" r="7.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M9 11L11 13L15.5 8.5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.5 17.5L7 21.5L12 19.5L17 21.5L15.5 17.5" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  ),
+  'SIPP/CHED Report Generation': (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M6 3.5H14L18.5 8V20.5H6V3.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M14 3.5V8H18.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M12 12V17M12 17L9.5 14.5M12 17L14.5 14.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  'Settings/Profile': (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M12 3.5V5.5M12 18.5V20.5M20.5 12H18.5M5.5 12H3.5M17.7 6.3L16.3 7.7M7.7 16.3L6.3 17.7M17.7 17.7L16.3 16.3M7.7 7.7L6.3 6.3"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  ),
+}
+
+type ClassTab = 'members' | 'attendance' | 'reports'
+
+const initialClasses: ClassRecord[] = [
+  { id: 'class-1', name: 'BSIT 4A', coordinatorId: 'coord-1', schoolYear: '2025-2026', term: '2nd Semester', requiredHours: 600, joinCode: 'DEMO01' },
+  { id: 'class-2', name: 'BSIT 4B', coordinatorId: 'coord-1', schoolYear: '2025-2026', term: '2nd Semester', requiredHours: 600, joinCode: 'DEMO02' },
+]
+
+const initialClassJoinRequests: ClassJoinRequestRecord[] = []
+
+const initialStudents: StudentRecord[] = [
+  { id: 'student-1', userId: 'user-1', classId: 'class-1', assignedHteId: 'hte-1', requiredHours: 600, renderedHours: 120 },
+  { id: 'student-2', userId: 'user-2', classId: 'class-1', assignedHteId: 'hte-2', requiredHours: 600, renderedHours: 600, completionStatus: 'in_progress' },
+]
+
+const initialHtes: HteRecord[] = [
+  {
+    id: 'hte-1',
+    name: 'Marbel City IT Solutions',
+    address: 'National Highway, Koronadal City, South Cotabato',
+    supervisorName: 'Engr. Santos',
+    supervisorEmail: 'santos@example.com',
+    supervisorPhone: '0917-000-0001',
+  },
+  {
+    id: 'hte-2',
+    name: 'South Cotabato Data Systems',
+    address: 'Alunan Ave, Koronadal City, South Cotabato',
+    supervisorName: 'Ms. Reyes',
+    supervisorEmail: 'reyes@example.com',
+    supervisorPhone: '0917-000-0002',
+  },
+]
+
+const initialUsers: Record<string, UserRecord> = {
+  'user-1': {
+    id: 'user-1',
+    email: studentIdToEmail('25-0001'),
+    displayName: 'Jane Doe',
+    role: 'student',
+    createdAt: new Date().toISOString(),
+    studentIdCode: '25-0001',
+  },
+  'user-2': {
+    id: 'user-2',
+    email: studentIdToEmail('25-0002'),
+    displayName: 'John Smith',
+    role: 'student',
+    createdAt: new Date().toISOString(),
+    studentIdCode: '25-0002',
+  },
+}
+
+const DEFAULT_PREFERENCES: SystemPreferencesRecord = {
+  institutionName: 'Notre Dame of Marbel University',
+  department: 'CEAC',
+  defaultRequiredHours: 480,
+  academicYear: '2025-2026',
+  semester: '2nd Semester',
+  absenceAlertThresholdDays: 2,
+}
+
+const initialCoordinators: Record<string, UserRecord> = {
+  'demo-coordinator': {
+    id: 'demo-coordinator',
+    displayName: 'Demo Coordinator',
+    email: 'demo@local',
+    role: 'coordinator',
+    createdAt: new Date().toISOString(),
+  },
+}
+
+const initialNotifications: NotificationRecord[] = [
+  { id: 'note-1', recipientId: 'coord-1', type: 'attendance', message: 'Student Jane Doe submitted a new attendance log.', read: false, createdAt: new Date().toISOString() },
+  { id: 'note-2', recipientId: 'coord-1', type: 'report', message: 'Weekly report submitted for BSIT 4A.', read: false, createdAt: new Date().toISOString() },
+]
+
+const initialHteEvaluationLinks: HteEvaluationLinkRecord[] = []
+
+const initialHteEvaluations: HteEvaluationRecord[] = [
+  {
+    id: 'eval-1',
+    studentId: 'user-2',
+    submittedByLinkToken: 'demo-token',
+    scores: {
+      'Work Quality': 5,
+      'Punctuality & Attendance': 4,
+      'Communication Skills': 5,
+      'Initiative & Willingness to Learn': 5,
+      'Professionalism': 5,
+    },
+    comments: 'John has been an excellent addition to our team — proactive, reliable, and a fast learner.',
+    supervisorName: 'Engr. Santos',
+    submittedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+  },
+]
+
+const initialReports: ReportRecord[] = [
+  {
+    id: 'report-1',
+    studentId: 'user-1',
+    type: 'daily',
+    content: 'Assisted with QA testing for the new patient intake module and logged 3 bugs.',
+    status: 'pending',
+    submittedAt: new Date().toISOString(),
+  },
+  {
+    id: 'report-2',
+    studentId: 'user-2',
+    type: 'weekly',
+    content: 'Completed the onboarding checklist and shadowed the network team for server migration tasks.',
+    status: 'approved',
+    submittedAt: new Date(Date.now() - 86400000).toISOString(),
+  },
+]
+
+const initialPreOjtDocuments: PreOjtDocumentRecord[] = [
+  {
+    id: 'doc-1',
+    studentId: 'user-1',
+    docType: 'MOA',
+    fileUrl: '',
+    status: 'pending',
+  },
+  {
+    id: 'doc-2',
+    studentId: 'user-2',
+    docType: 'waiver',
+    fileUrl: '',
+    status: 'approved',
+  },
+]
+
+const initialAttendanceLogs: AttendanceLogRecord[] = [
+  {
+    id: 'log-1',
+    studentId: 'user-1',
+    type: 'time_in',
+    timestamp: new Date(Date.now() - 5 * 3600000).toISOString(),
+    photoUrl: '',
+    status: 'pending',
+  },
+  {
+    id: 'log-2',
+    studentId: 'user-2',
+    type: 'time_out',
+    timestamp: new Date(Date.now() - 1 * 3600000).toISOString(),
+    photoUrl: '',
+    status: 'verified',
+  },
+]
+
+const formatTimestamp = (value: unknown): string => {
+  if (!value) return ''
+  if (typeof value === 'string') return new Date(value).toLocaleString()
+  if (typeof value === 'object' && value !== null && 'toDate' in value) {
+    return (value as { toDate: () => Date }).toDate().toLocaleString()
+  }
+  return ''
+}
+
+function App() {
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      const stored = localStorage.getItem('ojtrack_theme')
+      if (stored === 'light' || stored === 'dark') return stored
+    } catch (e) {}
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  })
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    try {
+      localStorage.setItem('ojtrack_theme', theme)
+    } catch (e) {}
+  }, [theme])
+
+  const [user, setUser] = useState<UserRecord | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [selectedModule, setSelectedModule] = useState(modules[0])
+  const [classes, setClasses] = useState<ClassRecord[]>(initialClasses)
+  const [students, setStudents] = useState<StudentRecord[]>(initialStudents)
+  const [htes, setHtes] = useState<HteRecord[]>(initialHtes)
+  const [users, setUsers] = useState<Record<string, UserRecord>>(initialUsers)
+  const [coordinators, setCoordinators] = useState<Record<string, UserRecord>>(initialCoordinators)
+  const [reports, setReports] = useState<ReportRecord[]>(initialReports)
+  const [preOjtDocuments, setPreOjtDocuments] = useState<PreOjtDocumentRecord[]>(initialPreOjtDocuments)
+  const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLogRecord[]>(initialAttendanceLogs)
+  const [hteEvaluationLinks, setHteEvaluationLinks] = useState<HteEvaluationLinkRecord[]>(initialHteEvaluationLinks)
+  const [hteEvaluations, setHteEvaluations] = useState<HteEvaluationRecord[]>(initialHteEvaluations)
+  const [generatedHteLink, setGeneratedHteLink] = useState<{ studentId: string; url: string } | null>(null)
+  const [classJoinRequests, setClassJoinRequests] = useState<ClassJoinRequestRecord[]>(initialClassJoinRequests)
+  const [creatingClass, setCreatingClass] = useState(false)
+  const [preferences, setPreferences] = useState<SystemPreferencesRecord>(DEFAULT_PREFERENCES)
+  const [savingPreferences, setSavingPreferences] = useState(false)
+  const [preferencesSaved, setPreferencesSaved] = useState(false)
+  const [notifications, setNotifications] = useState<NotificationRecord[]>(initialNotifications)
+  const [dashboardLoading, setDashboardLoading] = useState(true)
+  const [editingStudent, setEditingStudent] = useState<StudentRecord | null>(null)
+  const [openClassId, setOpenClassId] = useState<string | null>(null)
+  const [classTab, setClassTab] = useState<ClassTab>('members')
+  const [editingClass, setEditingClass] = useState<ClassRecord | null>(null)
+  const [assigningHte, setAssigningHte] = useState<StudentRecord | null>(null)
+  const [viewingStudent, setViewingStudent] = useState<StudentRecord | null>(null)
+  const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'present' | 'pending' | 'absent'>('all')
+  const [viewingAttendanceDay, setViewingAttendanceDay] = useState<StudentRecord | null>(null)
+  const [newHteName, setNewHteName] = useState('')
+  const [newHteAddress, setNewHteAddress] = useState('')
+  const [newHteSupervisorName, setNewHteSupervisorName] = useState('')
+  const [newHteSupervisorEmail, setNewHteSupervisorEmail] = useState('')
+  const [newHteSupervisorPhone, setNewHteSupervisorPhone] = useState('')
+  const [addingHte, setAddingHte] = useState(false)
+  const [addHteError, setAddHteError] = useState('')
+  const [newCoordinatorName, setNewCoordinatorName] = useState('')
+  const [newCoordinatorEmail, setNewCoordinatorEmail] = useState('')
+  const [newCoordinatorPassword, setNewCoordinatorPassword] = useState('')
+  const [addingCoordinator, setAddingCoordinator] = useState(false)
+  const [addCoordinatorError, setAddCoordinatorError] = useState('')
+
+  useEffect(() => {
+    // Auto-login demo user if present in localStorage (testing/dev only)
+    try {
+      const raw = localStorage.getItem('ojtrack_demo_user')
+      if (raw) {
+        const parsed = JSON.parse(raw) as UserRecord
+        setUser(parsed)
+        setLoading(false)
+        return
+      }
+    } catch (e) {}
+
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
+        if (userDoc.exists()) {
+          setUser({ ...userDoc.data() as UserRecord, id: firebaseUser.uid })
+        }
+      } else {
+        setUser(null)
+      }
+      setLoading(false)
+    })
+    return () => unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (!user || user.id === 'demo-coordinator') {
+      setDashboardLoading(false)
+      return undefined
+    }
+
+    registerPushNotifications(user.id)
+
+    const classesUnsubscribe = onSnapshot(collection(db, 'classes'), (snapshot) => {
+      const loadedClasses = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<ClassRecord, 'id'>),
+      }))
+      setClasses(loadedClasses)
+    })
+
+    const preferencesUnsubscribe = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
+      if (snap.exists()) {
+        setPreferences({ ...DEFAULT_PREFERENCES, ...(snap.data() as Partial<SystemPreferencesRecord>) })
+      }
+    })
+
+    const studentsUnsubscribe = onSnapshot(collection(db, 'students'), (snapshot) => {
+      const loadedStudents = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<StudentRecord, 'id'>),
+      }))
+      setStudents(loadedStudents)
+    })
+
+    const classJoinRequestsUnsubscribe = onSnapshot(
+      query(collection(db, 'class_join_requests'), where('status', '==', 'pending')),
+      (snapshot) => {
+        const loadedRequests = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<ClassJoinRequestRecord, 'id'>),
+        }))
+        setClassJoinRequests(loadedRequests)
+      },
+    )
+
+    const htesUnsubscribe = onSnapshot(collection(db, 'htes'), (snapshot) => {
+      const loadedHtes = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<HteRecord, 'id'>),
+      }))
+      setHtes(loadedHtes)
+    })
+
+    const usersUnsubscribe = onSnapshot(
+      query(collection(db, 'users'), where('role', '==', 'student')),
+      (snapshot) => {
+        const loadedUsers: Record<string, UserRecord> = {}
+        snapshot.docs.forEach((docSnap) => {
+          loadedUsers[docSnap.id] = { id: docSnap.id, ...(docSnap.data() as Omit<UserRecord, 'id'>) }
+        })
+        setUsers(loadedUsers)
+      },
+    )
+
+    const coordinatorsUnsubscribe = onSnapshot(
+      query(collection(db, 'users'), where('role', 'in', ['coordinator', 'admin'])),
+      (snapshot) => {
+        const loadedCoordinators: Record<string, UserRecord> = {}
+        snapshot.docs.forEach((docSnap) => {
+          loadedCoordinators[docSnap.id] = { id: docSnap.id, ...(docSnap.data() as Omit<UserRecord, 'id'>) }
+        })
+        setCoordinators(loadedCoordinators)
+      },
+    )
+
+    const reportsUnsubscribe = onSnapshot(collection(db, 'reports'), (snapshot) => {
+      const loadedReports = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<ReportRecord, 'id'>),
+      }))
+      setReports(loadedReports)
+    })
+
+    const documentsUnsubscribe = onSnapshot(collection(db, 'pre_ojt_documents'), (snapshot) => {
+      const loadedDocuments = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<PreOjtDocumentRecord, 'id'>),
+      }))
+      setPreOjtDocuments(loadedDocuments)
+    })
+
+    const attendanceUnsubscribe = onSnapshot(collection(db, 'attendance_logs'), (snapshot) => {
+      const loadedLogs = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<AttendanceLogRecord, 'id'>),
+      }))
+      setAttendanceLogs(loadedLogs)
+    })
+
+    const hteLinksUnsubscribe = onSnapshot(collection(db, 'hte_evaluation_links'), (snapshot) => {
+      const loadedLinks = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<HteEvaluationLinkRecord, 'id'>),
+      }))
+      setHteEvaluationLinks(loadedLinks)
+    })
+
+    const hteEvaluationsUnsubscribe = onSnapshot(collection(db, 'hte_evaluations'), (snapshot) => {
+      const loadedEvaluations = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<HteEvaluationRecord, 'id'>),
+      }))
+      setHteEvaluations(loadedEvaluations)
+    })
+
+    const notificationsUnsubscribe = onSnapshot(
+      query(collection(db, 'notifications'), where('recipientId', '==', user.id)),
+      (snapshot) => {
+        const loadedNotifications = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as Omit<NotificationRecord, 'id'>),
+        }))
+        setNotifications(loadedNotifications)
+      },
+    )
+
+    setDashboardLoading(false)
+    return () => {
+      classesUnsubscribe()
+      preferencesUnsubscribe()
+      studentsUnsubscribe()
+      classJoinRequestsUnsubscribe()
+      htesUnsubscribe()
+      usersUnsubscribe()
+      coordinatorsUnsubscribe()
+      reportsUnsubscribe()
+      documentsUnsubscribe()
+      attendanceUnsubscribe()
+      hteLinksUnsubscribe()
+      hteEvaluationsUnsubscribe()
+      notificationsUnsubscribe()
+    }
+  }, [user])
+
+  const unassignedHteCount = useMemo(() => students.filter((s) => !s.assignedHteId).length, [students])
+
+  const systemActivityLog = useMemo(() => {
+    const items: { id: string; icon: string; text: string; time: number }[] = []
+
+    reports.forEach((r) => {
+      const time = new Date(formatTimestamp(r.submittedAt) || 0).getTime()
+      if (!time) return
+      const name = users[r.studentId]?.displayName || users[r.studentId]?.studentIdCode || 'A student'
+      items.push({ id: `report-${r.id}`, icon: '📄', text: `${name} submitted a ${r.type} report.`, time })
+      if (r.status !== 'pending') {
+        items.push({
+          id: `report-status-${r.id}`,
+          icon: r.status === 'approved' ? '✅' : '❌',
+          text: `${name}'s ${r.type} report was ${r.status}.`,
+          time: time + 1,
+        })
+      }
+    })
+
+    attendanceLogs.forEach((log) => {
+      const time = new Date(formatTimestamp(log.timestamp) || 0).getTime()
+      if (!time) return
+      const name = users[log.studentId]?.displayName || users[log.studentId]?.studentIdCode || 'A student'
+      const action = log.type === 'time_in' ? 'time-in' : 'time-out'
+      items.push(
+        log.status === 'flagged'
+          ? { id: `log-${log.id}`, icon: '⚠️', text: `${name}'s ${action} log was flagged for review.`, time }
+          : { id: `log-${log.id}`, icon: '🕒', text: `${name} logged a ${action}.`, time },
+      )
+    })
+
+    hteEvaluations.forEach((ev) => {
+      const time = new Date(formatTimestamp(ev.submittedAt) || 0).getTime()
+      if (!time) return
+      const name = users[ev.studentId]?.displayName || users[ev.studentId]?.studentIdCode || 'A student'
+      items.push({ id: `eval-${ev.id}`, icon: '🔗', text: `HTE evaluation submitted for ${name}.`, time })
+    })
+
+    students.forEach((s) => {
+      if (s.completionStatus !== 'completed' || !s.completedAt) return
+      const time = new Date(s.completedAt).getTime()
+      if (!time) return
+      const name = users[s.userId]?.displayName || users[s.userId]?.studentIdCode || 'A student'
+      items.push({ id: `completed-${s.id}`, icon: '🎓', text: `${name}'s internship was marked complete.`, time })
+    })
+
+    return items.sort((a, b) => b.time - a.time)
+  }, [reports, attendanceLogs, hteEvaluations, students, users])
+
+  const recentActivity = useMemo(() => systemActivityLog.slice(0, 5), [systemActivityLog])
+
+  const totalInterns = students.length
+  const pendingReviewsCount =
+    reports.filter((r) => r.status === 'pending').length + preOjtDocuments.filter((d) => d.status === 'pending').length
+  const attendanceCompliance = students.length
+    ? Math.round(
+        (students.reduce((sum, student) => sum + student.renderedHours, 0) /
+          students.reduce((sum, student) => sum + student.requiredHours, 0)) *
+          100,
+      )
+    : 0
+  const liveUpdatesActive = !dashboardLoading && user?.id !== 'demo-coordinator'
+
+  const addClass = async (input: { name: string; schoolYear: string; term: string; requiredHours: number }) => {
+    if (user?.id === 'demo-coordinator') {
+      const joinCode = `DEMO${Math.floor(Math.random() * 90 + 10)}`
+      setClasses((current) => [
+        ...current,
+        { id: `class-${Date.now()}`, coordinatorId: user.id, joinCode, ...input },
+      ])
+      return
+    }
+
+    const joinCode = await generateUniqueJoinCode()
+    await addDoc(collection(db, 'classes'), {
+      ...input,
+      coordinatorId: user?.id || 'unknown',
+      joinCode,
+    })
+  }
+
+  const respondToJoinRequest = async (
+    request: ClassJoinRequestRecord,
+    decision: 'approved' | 'rejected',
+  ) => {
+    const classItem = classes.find((c) => c.id === request.classId)
+
+    setClassJoinRequests((current) => current.filter((r) => r.id !== request.id))
+    if (decision === 'approved' && classItem) {
+      setStudents((current) => [
+        ...current,
+        { id: request.studentUid, userId: request.studentUid, classId: request.classId, requiredHours: classItem.requiredHours, renderedHours: 0 },
+      ])
+    }
+
+    if (user && user.id !== 'demo-coordinator') {
+      try {
+        if (decision === 'approved' && classItem) {
+          await setDoc(doc(db, 'students', request.studentUid), {
+            userId: request.studentUid,
+            classId: request.classId,
+            requiredHours: classItem.requiredHours,
+            renderedHours: 0,
+          })
+        }
+        await updateDoc(doc(db, 'class_join_requests', request.id), {
+          status: decision,
+          respondedAt: new Date().toISOString(),
+          respondedBy: user.id,
+        })
+      } catch (error) {
+        console.error('Failed to respond to join request:', error)
+      }
+    }
+    await markStudentNotificationsRead(request.studentUid, ['class_join_request'])
+  }
+
+  const updateClass = async (
+    classId: string,
+    updates: { name: string; schoolYear: string; term: string; requiredHours: number },
+  ) => {
+    setClasses((current) => current.map((c) => (c.id === classId ? { ...c, ...updates } : c)))
+    if (user && user.id !== 'demo-coordinator') {
+      try {
+        await updateDoc(doc(db, 'classes', classId), updates)
+      } catch (error) {
+        console.error('Failed to update class:', error)
+      }
+    }
+    setEditingClass(null)
+  }
+
+  const deleteClass = async (classId: string) => {
+    const affectedStudents = students.filter((s) => s.classId === classId)
+
+    setStudents((current) => current.map((s) => (s.classId === classId ? { ...s, classId: '' } : s)))
+    setClasses((current) => current.filter((c) => c.id !== classId))
+
+    if (user && user.id !== 'demo-coordinator') {
+      try {
+        await Promise.all(
+          affectedStudents.map((s) => updateDoc(doc(db, 'students', s.id), { classId: '' })),
+        )
+        await deleteDoc(doc(db, 'classes', classId))
+      } catch (error) {
+        console.error('Failed to delete class:', error)
+      }
+    }
+    setEditingClass(null)
+  }
+
+  const updateReportStatus = async (reportId: string, status: 'approved' | 'rejected') => {
+    const report = reports.find((r) => r.id === reportId)
+    setReports((current) => current.map((r) => (r.id === reportId ? { ...r, status } : r)))
+    if (user && user.id !== 'demo-coordinator') {
+      try {
+        await updateDoc(doc(db, 'reports', reportId), { status })
+      } catch (error) {
+        console.error('Failed to update report status:', error)
+      }
+    }
+    if (report) await markStudentNotificationsRead(report.studentId, ['report'])
+  }
+
+  const updateDocumentStatus = async (documentId: string, status: 'approved' | 'rejected') => {
+    const document = preOjtDocuments.find((d) => d.id === documentId)
+    setPreOjtDocuments((current) => current.map((d) => (d.id === documentId ? { ...d, status } : d)))
+    if (user && user.id !== 'demo-coordinator') {
+      try {
+        await updateDoc(doc(db, 'pre_ojt_documents', documentId), { status })
+      } catch (error) {
+        console.error('Failed to update document status:', error)
+      }
+    }
+    if (document) await markStudentNotificationsRead(document.studentId, ['document'])
+  }
+
+  const markStudentCompleted = async (studentId: string) => {
+    const completedAt = new Date().toISOString()
+    setStudents((current) =>
+      current.map((s) => (s.id === studentId ? { ...s, completionStatus: 'completed', completedAt } : s)),
+    )
+    if (user && user.id !== 'demo-coordinator') {
+      try {
+        await updateDoc(doc(db, 'students', studentId), { completionStatus: 'completed', completedAt })
+      } catch (error) {
+        console.error('Failed to mark student completed:', error)
+      }
+    }
+  }
+
+  const reopenStudentInternship = async (studentId: string) => {
+    setStudents((current) =>
+      current.map((s) => (s.id === studentId ? { ...s, completionStatus: 'in_progress' } : s)),
+    )
+    if (user && user.id !== 'demo-coordinator') {
+      try {
+        await updateDoc(doc(db, 'students', studentId), { completionStatus: 'in_progress' })
+      } catch (error) {
+        console.error('Failed to reopen internship:', error)
+      }
+    }
+  }
+
+  const markAllNotificationsRead = async () => {
+    const unread = notifications.filter((n) => !n.read)
+    setNotifications((current) => current.map((n) => ({ ...n, read: true })))
+    if (user && user.id !== 'demo-coordinator') {
+      try {
+        await Promise.all(unread.map((n) => updateDoc(doc(db, 'notifications', n.id), { read: true })))
+      } catch (error) {
+        console.error('Failed to mark all notifications read:', error)
+      }
+    }
+  }
+
+  /**
+   * Clears the notify dot next to a student's name (see renderClassMembersTab
+   * / renderClassAttendanceTab) once the coordinator has acted on whatever
+   * triggered it — or immediately, if they click the dot itself.
+   */
+  const markStudentNotificationsRead = async (studentId: string, types: string[]) => {
+    const matching = notifications.filter((n) => !n.read && n.studentId === studentId && types.includes(n.type))
+    if (matching.length === 0) return
+    setNotifications((current) =>
+      current.map((n) => (matching.some((m) => m.id === n.id) ? { ...n, read: true } : n)),
+    )
+    if (user && user.id !== 'demo-coordinator') {
+      try {
+        await Promise.all(matching.map((n) => updateDoc(doc(db, 'notifications', n.id), { read: true })))
+      } catch (error) {
+        console.error('Failed to mark student notifications read:', error)
+      }
+    }
+  }
+
+  const openClass = (classId: string, tab: ClassTab = 'members') => {
+    setSelectedModule('Class Management')
+    setOpenClassId(classId)
+    setClassTab(tab)
+  }
+
+  const generateHteEvaluationLink = async (studentId: string) => {
+    const token = crypto.randomUUID()
+    const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+    const url = `${window.location.origin}${window.location.pathname}?evaluate=${token}`
+
+    if (user?.id === 'demo-coordinator') {
+      setHteEvaluationLinks((current) => [
+        ...current,
+        { id: `link-${Date.now()}`, studentId, token, expiresAt, submitted: false },
+      ])
+    } else {
+      try {
+        await addDoc(collection(db, 'hte_evaluation_links'), { studentId, token, expiresAt, submitted: false })
+      } catch (error) {
+        console.error('Failed to generate evaluation link:', error)
+        return
+      }
+    }
+    setGeneratedHteLink({ studentId, url })
+  }
+
+  const updateAttendanceLogStatus = async (logId: string, status: 'verified' | 'flagged') => {
+    const log = attendanceLogs.find((l) => l.id === logId)
+    setAttendanceLogs((current) => current.map((log) => (log.id === logId ? { ...log, status } : log)))
+    if (user && user.id !== 'demo-coordinator') {
+      try {
+        await updateDoc(doc(db, 'attendance_logs', logId), { status })
+      } catch (error) {
+        console.error('Failed to update attendance log status:', error)
+      }
+    }
+    if (log) await markStudentNotificationsRead(log.studentId, ['attendance', 'attendance_error'])
+  }
+
+  const removeStudentFromClass = async (student: StudentRecord) => {
+    setStudents((current) =>
+      current.map((s) => (s.id === student.id ? { ...s, classId: '' } : s)),
+    )
+    if (user && user.id !== 'demo-coordinator') {
+      try {
+        await updateDoc(doc(db, 'students', student.id), { classId: '' })
+      } catch (error) {
+        console.error('Failed to remove student from class:', error)
+      }
+    }
+  }
+
+  const addHte = async (payload: Omit<HteRecord, 'id'>): Promise<string> => {
+    if (user?.id === 'demo-coordinator') {
+      const id = `hte-${Date.now()}`
+      setHtes((current) => [...current, { id, ...payload }])
+      return id
+    }
+    const docRef = await addDoc(collection(db, 'htes'), payload)
+    return docRef.id
+  }
+
+  const assignStudentHte = async (studentId: string, hteId: string) => {
+    setStudents((current) =>
+      current.map((s) => (s.id === studentId ? { ...s, assignedHteId: hteId } : s)),
+    )
+    if (user && user.id !== 'demo-coordinator') {
+      try {
+        await updateDoc(doc(db, 'students', studentId), { assignedHteId: hteId })
+      } catch (error) {
+        console.error('Failed to assign HTE:', error)
+      }
+    }
+  }
+
+  const addCoordinatorAccount = async (fullName: string, email: string, password: string) => {
+    const trimmedEmail = email.trim().toLowerCase()
+    const trimmedName = fullName.trim()
+    if (!trimmedName || !trimmedEmail || !password) {
+      throw new Error('Enter a name, email, and temporary password.')
+    }
+    const taken = Object.values(coordinators).some((c) => c.email.toLowerCase() === trimmedEmail)
+    if (taken) {
+      throw new Error('An account with this email already exists.')
+    }
+
+    if (user?.id === 'demo-coordinator') {
+      const id = `demo-coordinator-${Date.now()}`
+      setCoordinators((current) => ({
+        ...current,
+        [id]: { id, email: trimmedEmail, displayName: trimmedName, role: 'coordinator', createdAt: new Date().toISOString() },
+      }))
+      return
+    }
+
+    const uid = await createCoordinatorAccount(trimmedEmail, password)
+    await setDoc(doc(db, 'users', uid), {
+      email: trimmedEmail,
+      displayName: trimmedName,
+      role: 'coordinator',
+      createdAt: new Date().toISOString(),
+    })
+  }
+
+
+  const saveHoursCorrection = async (newRequiredHours: number, newRenderedHours: number, reason: string) => {
+    if (!editingStudent) return
+    const previousRequiredHours = editingStudent.requiredHours
+    const previousRenderedHours = editingStudent.renderedHours
+    setStudents((current) =>
+      current.map((student) =>
+        student.id === editingStudent.id
+          ? { ...student, requiredHours: newRequiredHours, renderedHours: newRenderedHours }
+          : student,
+      ),
+    )
+
+    if (user && user.id !== 'demo-coordinator') {
+      try {
+        await updateDoc(doc(db, 'students', editingStudent.id), {
+          requiredHours: newRequiredHours,
+          renderedHours: newRenderedHours,
+          lastHoursCorrection: {
+            previousRequiredHours,
+            newRequiredHours,
+            previousRenderedHours,
+            newRenderedHours,
+            reason,
+            correctedBy: user.id,
+            correctedAt: new Date().toISOString(),
+          },
+        })
+      } catch (error) {
+        console.error('Failed to save hours correction:', error)
+      }
+    }
+
+    setEditingStudent(null)
+  }
+
+  const sippReportRows = () =>
+    students.map((s) => {
+      const cls = classes.find((c) => c.id === s.classId)
+      const hte = htes.find((h) => h.id === s.assignedHteId)
+      return {
+        studentId: users[s.userId]?.studentIdCode || s.userId,
+        name: users[s.userId]?.displayName || '',
+        classAndYear: `${cls?.name || 'Unassigned'} — ${cls?.schoolYear || ''} ${cls?.term || ''}`.trim(),
+        hteName: hte?.name || 'Not assigned',
+        hteAddress: hte?.address || '',
+        supervisorName: hte?.supervisorName || '',
+        supervisorContact: [hte?.supervisorEmail, hte?.supervisorPhone].filter(Boolean).join(' / '),
+        requiredHours: s.requiredHours,
+        renderedHours: s.renderedHours,
+        status: s.completionStatus === 'completed' ? 'Completed' : 'In Progress',
+        completedAt: s.completedAt ? new Date(s.completedAt).toLocaleDateString() : '',
+      }
+    })
+
+  const exportCsv = () => {
+    const header = [
+      'Student ID',
+      'Name',
+      'Class / School Year / Term',
+      'HTE Name',
+      'HTE Address',
+      'Supervisor Name',
+      'Supervisor Contact',
+      'Required Hours',
+      'Rendered Hours',
+      'Status',
+      'Completion Date',
+    ]
+    const rows = sippReportRows().map((r) => [
+      r.studentId,
+      r.name,
+      r.classAndYear,
+      r.hteName,
+      r.hteAddress,
+      r.supervisorName,
+      r.supervisorContact,
+      String(r.requiredHours),
+      String(r.renderedHours),
+      r.status,
+      r.completedAt,
+    ])
+    const csvContent = [header, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `ojtrack-sipp-report-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportPdf = () => {
+    const rows = sippReportRows()
+      .map(
+        (r) => `<tr>
+          <td>${r.studentId}</td>
+          <td>${r.name}</td>
+          <td>${r.classAndYear}</td>
+          <td>${r.hteName}${r.hteAddress ? `<br><span class="muted">${r.hteAddress}</span>` : ''}</td>
+          <td>${r.supervisorName}${r.supervisorContact ? `<br><span class="muted">${r.supervisorContact}</span>` : ''}</td>
+          <td>${r.renderedHours} / ${r.requiredHours}</td>
+          <td>${r.status}${r.completedAt ? `<br><span class="muted">${r.completedAt}</span>` : ''}</td>
+        </tr>`,
+      )
+      .join('')
+
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) return
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>OJTrack SIPP Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; color: #0f172a; }
+            h1 { font-size: 18px; margin-bottom: 2px; }
+            .muted { color: #64748b; font-size: 10.5px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+            th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; font-size: 11px; vertical-align: top; }
+            th { background: #eff6ff; }
+            .signature-row { display: flex; justify-content: space-between; margin-top: 64px; }
+            .signature-block { width: 45%; text-align: center; }
+            .signature-line { border-top: 1px solid #0f172a; margin-top: 40px; padding-top: 6px; font-size: 11px; }
+          </style>
+        </head>
+        <body>
+          <h1>OJTrack — Student Internship Placement Program (SIPP) Report</h1>
+          <p>College of Engineering, Architecture and Computing, Notre Dame of Marbel University</p>
+          <p class="muted">Generated ${new Date().toLocaleString()} by ${user?.displayName || 'Coordinator'}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Student ID</th><th>Name</th><th>Class / SY / Term</th><th>Host Training Establishment</th>
+                <th>Supervisor</th><th>Hours</th><th>Status</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <div class="signature-row">
+            <div class="signature-block">
+              <div class="signature-line">Prepared by: ${user?.displayName || 'OJT Coordinator'}</div>
+            </div>
+            <div class="signature-block">
+              <div class="signature-line">Noted by: Department Chairperson / Dean</div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
+    printWindow.focus()
+    printWindow.print()
+  }
+
+  const renderDashboard = () => {
+    const hoursData: BarChartDatum[] = students
+      .slice()
+      .sort((a, b) => b.renderedHours - a.renderedHours)
+      .slice(0, 8)
+      .map((s) => ({
+        label: (users[s.userId]?.displayName || 'Student').split(' ')[0],
+        value: s.renderedHours,
+        color: 'var(--primary)',
+        displayValue: `${s.renderedHours}h`,
+      }))
+
+    const complianceByClass: BarChartDatum[] = classes.map((c) => {
+      const classStudents = students.filter((s) => s.classId === c.id)
+      const avgPct = classStudents.length
+        ? Math.round(
+            classStudents.reduce(
+              (sum, s) => sum + (s.requiredHours > 0 ? Math.min(100, (s.renderedHours / s.requiredHours) * 100) : 0),
+              0,
+            ) / classStudents.length,
+          )
+        : 0
+      const color = avgPct >= 80 ? 'var(--success)' : avgPct >= 50 ? 'var(--warning)' : 'var(--danger)'
+      return { label: c.name, value: avgPct, color, displayValue: `${avgPct}%` }
+    })
+
+    const atRiskStudents = students
+      .map((student) => ({ student, tier: getComplianceTier(student) }))
+      .filter(({ tier }) => tier.label !== 'Active')
+      .sort((a, b) => a.tier.pct - b.tier.pct)
+      .slice(0, 5)
+
+    return (
+      <>
+        <div className="stat-tile-grid">
+          <div className="stat-tile">
+            <div className="stat-tile-icon" style={{ background: 'var(--primary-light)', color: 'var(--primary-dark)' }}>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="9" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M3.5 19c0-3 2.5-5.2 5.5-5.2s5.5 2.2 5.5 5.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M15.5 6.5a3 3 0 010 5.8M18 19c0-2.4-1.6-4.4-3.8-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </div>
+            <div>
+              <span className="stat-tile-label">Total Interns</span>
+              <p className="stat-tile-value">{totalInterns}</p>
+              <span className="stat-tile-caption">{classes.length} class{classes.length === 1 ? '' : 'es'} active</span>
+            </div>
+          </div>
+          <div className="stat-tile">
+            <div className="stat-tile-icon" style={{ background: 'var(--accent-soft)', color: 'var(--accent)' }}>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="5" y="3.5" width="14" height="17" rx="1.6" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M8.5 8.5H15.5M8.5 12H15.5M8.5 15.5H12.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+              </svg>
+            </div>
+            <div>
+              <span className="stat-tile-label">Pending Reviews</span>
+              <p className="stat-tile-value">{pendingReviewsCount}</p>
+              <span className="stat-tile-caption">Reports &amp; documents</span>
+            </div>
+          </div>
+          <div className="stat-tile">
+            <div className="stat-tile-icon" style={{ background: 'rgba(22,163,74,0.14)', color: 'var(--success)' }}>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 16L9.5 10L13.5 14L20 6.5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M14.5 6.5H20V12" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <div>
+              <span className="stat-tile-label">Attendance Compliance</span>
+              <p className="stat-tile-value">{attendanceCompliance}%</p>
+              <span className="stat-tile-caption">Avg. across all classes</span>
+            </div>
+          </div>
+          <div className="stat-tile">
+            <div className="stat-tile-icon" style={{ background: 'rgba(220,38,38,0.12)', color: 'var(--danger)' }}>
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="4.5" y="7" width="11" height="13" rx="1.2" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M15.5 20V4.5C15.5 3.9 15 3.5 14.5 3.5H8.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M19.5 20V10.5C19.5 9.9 19 9.5 18.5 9.5H15.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </div>
+            <div>
+              <span className="stat-tile-label">Unassigned HTE</span>
+              <p className="stat-tile-value">{unassignedHteCount}</p>
+              <span className="stat-tile-caption">Needs HTE assignment</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="chart-row">
+          <div className="chart-card">
+            <h3>Hours Rendered</h3>
+            <p>Highest logged hours across all interns.</p>
+            {hoursData.length === 0 ? (
+              <EmptyState title="No hours logged yet" subtitle="Rendered hours will show up here once interns start logging attendance." />
+            ) : (
+              <SimpleBarChart data={hoursData} />
+            )}
+          </div>
+          <div className="chart-card">
+            <h3>Compliance by Class</h3>
+            <p>Average hours compliance per class.</p>
+            {complianceByClass.length === 0 ? (
+              <EmptyState title="No classes yet" subtitle="Create a class to start tracking compliance." />
+            ) : (
+              <SimpleBarChart data={complianceByClass} maxValue={100} />
+            )}
+          </div>
+        </div>
+
+        <div className="module-row">
+          <div className="report-card">
+            <h3>Recent activity</h3>
+            {recentActivity.length === 0 ? (
+              <EmptyState title="No activity yet" subtitle="Student submissions and attendance events will show up here." />
+            ) : (
+              <ul className="activity-list">
+                {recentActivity.map((item) => (
+                  <li className="activity-item" key={item.id}>
+                    <span className={`activity-dot${item.icon === '⚠️' || item.icon === '❌' ? ' activity-dot-danger' : ''}`} />
+                    <p className="activity-text">{item.text}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="report-card">
+            <h3>Students at risk</h3>
+            {atRiskStudents.length === 0 ? (
+              <EmptyState title="No students at risk" subtitle="Everyone is compliant with their required hours." />
+            ) : (
+              <div className="at-risk-list">
+                {atRiskStudents.map(({ student, tier }) => {
+                  const name = users[student.userId]?.displayName || 'Unnamed student'
+                  const color = avatarColor(student.userId)
+                  return (
+                    <button className="at-risk-row" key={student.id} onClick={() => setViewingStudent(student)}>
+                      <span className="review-item-avatar" style={{ background: color.bg, color: color.fg }}>
+                        {initials(name)}
+                      </span>
+                      <span className="at-risk-info">
+                        <strong>{name}</strong>
+                        <span style={{ color: tier.color }}>{tier.pct}% compliance</span>
+                      </span>
+                      <span className="at-risk-chevron">›</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  const renderClassManagement = () => {
+    if (openClassId) {
+      const classItem = classes.find((c) => c.id === openClassId)
+      if (!classItem) {
+        setOpenClassId(null)
+        return null
+      }
+      return renderClassDetail(classItem)
+    }
+
+    return (
+      <div className="class-card-grid">
+        {classes.map((item) => {
+          const style = classCardStyle(item.id)
+          const studentCount = students.filter((s) => s.classId === item.id).length
+          const pendingCount = classJoinRequests.filter((r) => r.classId === item.id).length
+          return (
+            <button key={item.id} className="class-card" onClick={() => openClass(item.id)}>
+              {pendingCount > 0 && <span className="class-card-pending-badge">{pendingCount} pending</span>}
+              <div className="class-card-banner" style={{ background: style.bg, color: style.fg }}>
+                <span className="class-card-icon">{style.icon}</span>
+              </div>
+              <div className="class-card-body">
+                <h4>{item.name}</h4>
+                <p>{item.term} · {item.schoolYear}</p>
+                <div className="class-card-meta">
+                  <span>{studentCount} student{studentCount === 1 ? '' : 's'}</span>
+                  <span
+                    className="join-code-pill"
+                    title="Class join code"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      navigator.clipboard?.writeText(item.joinCode)
+                    }}
+                  >
+                    {item.joinCode}
+                  </span>
+                </div>
+              </div>
+              <div className="class-card-actions">
+                <span
+                  className="class-card-edit"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setEditingClass(item)
+                  }}
+                >
+                  Edit
+                </span>
+              </div>
+            </button>
+          )
+        })}
+        <button className="class-card class-card-create" onClick={() => setCreatingClass(true)}>
+          <span className="class-card-create-icon">+</span>
+          <span>Create class</span>
+        </button>
+      </div>
+    )
+  }
+
+  const hasUnreadForStudent = (classId: string, studentUserId: string) =>
+    notifications.some((n) => !n.read && n.classId === classId && n.studentId === studentUserId)
+
+  /** Same thresholds the Student Profile modal reads (tierFor in StudentProfileModal.tsx). */
+  const getComplianceTier = (student: StudentRecord) => {
+    const pct = student.requiredHours > 0 ? Math.round((student.renderedHours / student.requiredHours) * 100) : 0
+    if (pct >= 80) return { pct, label: 'Active', pillClass: 'status-pill-success', color: 'var(--success)' }
+    if (pct >= 50) return { pct, label: 'Warning', pillClass: 'status-pill-warning', color: 'var(--warning)' }
+    return { pct, label: 'At Risk', pillClass: 'status-pill-danger', color: 'var(--danger)' }
+  }
+
+  const renderClassDetail = (classItem: ClassRecord) => {
+    const classStudents = students.filter((s) => s.classId === classItem.id)
+    const tabs: { key: ClassTab; label: string }[] = [
+      { key: 'members', label: 'Members' },
+      { key: 'attendance', label: 'Attendance & Compliance' },
+      { key: 'reports', label: 'Reports & Documents' },
+    ]
+
+    return (
+      <div className="class-detail">
+        <div className="class-detail-header">
+          <button className="class-detail-back" onClick={() => setOpenClassId(null)}>
+            ← All classes
+          </button>
+          <div className="class-detail-heading">
+            <h2>{classItem.name}</h2>
+            <p>
+              {classItem.term} · {classItem.schoolYear} · {classStudents.length} student
+              {classStudents.length === 1 ? '' : 's'} · Join code:{' '}
+              <span
+                className="join-code-pill"
+                title="Copy join code"
+                onClick={() => navigator.clipboard?.writeText(classItem.joinCode)}
+              >
+                {classItem.joinCode}
+              </span>
+            </p>
+          </div>
+        </div>
+        <div className="class-tab-bar">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              className={classTab === tab.key ? 'class-tab-button active' : 'class-tab-button'}
+              onClick={() => setClassTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {classTab === 'members' && renderClassMembersTab(classItem, classStudents)}
+        {classTab === 'attendance' && renderClassAttendanceTab(classItem, classStudents)}
+        {classTab === 'reports' && renderClassReportsTab(classStudents)}
+      </div>
+    )
+  }
+
+  const renderClassMembersTab = (classItem: ClassRecord, classStudents: StudentRecord[]) => {
+    const pendingRequests = classJoinRequests.filter((r) => r.classId === classItem.id)
+    const unassignedCount = classStudents.filter((s) => !s.assignedHteId).length
+
+    return (
+      <section className="module-card">
+        {pendingRequests.length > 0 && (
+            <>
+              <h3>Pending join requests</h3>
+              <div className="review-list">
+                {pendingRequests.map((request) => (
+                  <div className="review-item" key={request.id}>
+                    <div className="review-item-header">
+                      <div>
+                        <strong>{request.studentName}</strong>
+                        <span className="review-meta no-capitalize">{request.studentEmail}</span>
+                      </div>
+                      <span className="status-badge status-pending">pending</span>
+                    </div>
+                    <div className="review-actions">
+                      <button className="secondary-button" onClick={() => respondToJoinRequest(request, 'rejected')}>
+                        Reject
+                      </button>
+                      <button className="primary-button" onClick={() => respondToJoinRequest(request, 'approved')}>
+                        Approve
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="roster-divider" />
+            </>
+          )}
+
+          <h3>Members</h3>
+          {classStudents.length === 0 ? (
+            <EmptyState
+              title="No students yet"
+              subtitle={`Share the join code (${classItem.joinCode}) with your students — they'll request to join from the app.`}
+            />
+          ) : (
+            <div className="table-wrap">
+              <table className="members-table">
+                <thead>
+                  <tr>
+                    <th>Student ID</th>
+                    <th>Name</th>
+                    <th>HTE</th>
+                    <th>Rendered Hrs</th>
+                    <th>Compliance</th>
+                    <th>Status</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {classStudents.map((student) => {
+                    const assignedHte = htes.find((h) => h.id === student.assignedHteId)
+                    const studentUser = users[student.userId]
+                    const name = studentUser?.displayName || 'Unnamed student'
+                    const tier = getComplianceTier(student)
+                    return (
+                      <tr key={student.id}>
+                        <td>
+                          <span className="mono">{studentUser?.studentIdCode || studentUser?.email || student.userId}</span>
+                        </td>
+                        <td>
+                          <span className="member-name-cell">
+                            {name}
+                            {hasUnreadForStudent(classItem.id, student.userId) && (
+                              <span
+                                className="notify-dot"
+                                title="New activity from this student"
+                                onClick={() =>
+                                  markStudentNotificationsRead(student.userId, [
+                                    'attendance',
+                                    'attendance_error',
+                                    'report',
+                                    'document',
+                                    'class_join_request',
+                                    'hte_evaluation',
+                                  ])
+                                }
+                              />
+                            )}
+                          </span>
+                        </td>
+                        <td>{assignedHte?.name || 'Unassigned'}</td>
+                        <td>
+                          <div className="hrs-progress-cell">
+                            <div className="hrs-progress-track">
+                              <div
+                                className="hrs-progress-fill"
+                                style={{ width: `${Math.min(100, tier.pct)}%`, background: tier.color }}
+                              />
+                            </div>
+                            <span className="mono">{student.renderedHours}h</span>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="compliance-cell" style={{ color: tier.color }}>
+                            {tier.pct}%
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`status-pill ${tier.pillClass}`}>{tier.label}</span>
+                        </td>
+                        <td>
+                          <button className="eye-button" title="View student profile" onClick={() => setViewingStudent(student)}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path
+                                d="M2 12C2 12 5.5 5.5 12 5.5C18.5 5.5 22 12 22 12C22 12 18.5 18.5 12 18.5C5.5 18.5 2 12 2 12Z"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                strokeLinejoin="round"
+                              />
+                              <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+                            </svg>
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {classStudents.length > 0 && (
+            <div className={`status-pill${unassignedCount === 0 ? ' status-pill-success' : ''}`} style={{ marginTop: 12 }}>
+              {unassignedCount === 0
+                ? 'All students have an assigned HTE'
+                : `${unassignedCount} student${unassignedCount === 1 ? '' : 's'} need HTE assignment`}
+            </div>
+          )}
+      </section>
+    )
+  }
+
+  const attendanceDayStatus = (
+    timeInLog: AttendanceLogRecord | undefined,
+    timeOutLog: AttendanceLogRecord | undefined,
+  ): 'verified' | 'pending' | 'flagged' | 'absent' => {
+    if (!timeInLog) return 'absent'
+    if (timeInLog.status === 'flagged' || timeOutLog?.status === 'flagged') return 'flagged'
+    if (timeOutLog && timeInLog.status === 'verified' && timeOutLog.status === 'verified') return 'verified'
+    return 'pending'
+  }
+
+  const formatClockTime = (value: unknown): string => {
+    if (!value) return '—'
+    const date = typeof value === 'string' ? new Date(value) : (value as { toDate?: () => Date }).toDate?.()
+    if (!date) return '—'
+    return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
+  }
+
+  const exportAttendanceCsv = (
+    className: string,
+    rows: { name: string; studentIdCode: string; dateLabel: string; timeIn: string; timeOut: string; hours: string; status: string }[],
+  ) => {
+    const header = ['Student', 'Student ID', 'Date', 'Time In', 'Time Out', 'Hours', 'Status']
+    const csvRows = rows.map((r) => [r.name, r.studentIdCode, r.dateLabel, r.timeIn, r.timeOut, r.hours, r.status])
+    const csvContent = [header, ...csvRows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${className.replace(/\s+/g, '-').toLowerCase()}-attendance-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const renderClassAttendanceTab = (classItem: ClassRecord, classStudents: StudentRecord[]) => {
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    const dateLabel = todayStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+
+    const classStudentIds = new Set(classStudents.map((s) => s.userId))
+    const todaysLogs = attendanceLogs.filter((log) => {
+      if (!classStudentIds.has(log.studentId)) return false
+      const logTime = new Date(formatTimestamp(log.timestamp) || 0)
+      return logTime >= todayStart
+    })
+
+    const dayRows = classStudents.map((student) => {
+      const studentLogs = todaysLogs.filter((log) => log.studentId === student.userId)
+      const timeInLog = studentLogs.find((log) => log.type === 'time_in')
+      const timeOutLog = studentLogs.find((log) => log.type === 'time_out')
+      const status = attendanceDayStatus(timeInLog, timeOutLog)
+      return { student, timeInLog, timeOutLog, status }
+    })
+
+    const presentCount = dayRows.filter((r) => r.status === 'verified').length
+    const pendingCount = dayRows.filter((r) => r.status === 'pending' || r.status === 'flagged').length
+    const absentCount = dayRows.filter((r) => r.status === 'absent').length
+
+    const filteredRows =
+      attendanceFilter === 'all'
+        ? dayRows
+        : dayRows.filter((r) =>
+            attendanceFilter === 'present'
+              ? r.status === 'verified'
+              : attendanceFilter === 'pending'
+                ? r.status === 'pending' || r.status === 'flagged'
+                : r.status === 'absent',
+          )
+
+    return (
+      <section className="module-card">
+        <div className="attendance-toolbar">
+          <div>
+            <h3>Attendance & Compliance</h3>
+            <p>Photo-verified time-in / time-out logs · {dateLabel}</p>
+          </div>
+          <div className="attendance-toolbar-actions">
+            <select
+              className="attendance-filter-select"
+              value={attendanceFilter}
+              onChange={(e) => setAttendanceFilter(e.target.value as typeof attendanceFilter)}
+              aria-label="Filter by status"
+            >
+              <option value="all">All statuses</option>
+              <option value="present">Present</option>
+              <option value="pending">Pending</option>
+              <option value="absent">Absent</option>
+            </select>
+            <button
+              className="secondary-button"
+              onClick={() =>
+                exportAttendanceCsv(
+                  classItem.name,
+                  filteredRows.map((r) => ({
+                    name: users[r.student.userId]?.displayName || 'Unnamed student',
+                    studentIdCode: users[r.student.userId]?.studentIdCode || r.student.userId,
+                    dateLabel,
+                    timeIn: formatClockTime(r.timeInLog?.timestamp),
+                    timeOut: formatClockTime(r.timeOutLog?.timestamp),
+                    hours: r.timeOutLog?.computedHours != null ? String(r.timeOutLog.computedHours) : r.timeInLog ? '—' : '0',
+                    status: r.status,
+                  })),
+                )
+              }
+            >
+              ⭳ Export
+            </button>
+          </div>
+        </div>
+
+        <div className="stat-tile-grid attendance-stat-grid">
+          <div className="stat-tile">
+            <div>
+              <p className="stat-tile-value" style={{ color: 'var(--success)' }}>
+                {presentCount}
+              </p>
+              <span className="stat-tile-label">Present</span>
+            </div>
+          </div>
+          <div className="stat-tile">
+            <div>
+              <p className="stat-tile-value" style={{ color: 'var(--warning)' }}>
+                {pendingCount}
+              </p>
+              <span className="stat-tile-label">Pending</span>
+            </div>
+          </div>
+          <div className="stat-tile">
+            <div>
+              <p className="stat-tile-value" style={{ color: 'var(--danger)' }}>
+                {absentCount}
+              </p>
+              <span className="stat-tile-label">Absent</span>
+            </div>
+          </div>
+          <div className="stat-tile">
+            <div>
+              <p className="stat-tile-value">{dayRows.length}</p>
+              <span className="stat-tile-label">Total</span>
+            </div>
+          </div>
+        </div>
+
+        {classStudents.length === 0 ? (
+          <EmptyState title="No students yet" subtitle="Approve a class join request to start tracking attendance." />
+        ) : (
+          <div className="table-wrap">
+            <table className="members-table">
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Date</th>
+                  <th>Time In</th>
+                  <th>Time Out</th>
+                  <th>Hours</th>
+                  <th>Status</th>
+                  <th>Photo</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.map(({ student, timeInLog, timeOutLog, status }) => {
+                  const name = users[student.userId]?.displayName || 'Unnamed student'
+                  const hours = timeOutLog?.computedHours != null ? timeOutLog.computedHours : timeInLog ? null : 0
+                  return (
+                    <tr key={student.id}>
+                      <td>
+                        <span className="member-name-cell">
+                          {name}
+                          {hasUnreadForStudent(classItem.id, student.userId) && (
+                            <span
+                              className="notify-dot"
+                              title="New activity from this student"
+                              onClick={() => markStudentNotificationsRead(student.userId, ['attendance', 'attendance_error'])}
+                            />
+                          )}
+                        </span>
+                      </td>
+                      <td className="mono">{dateLabel}</td>
+                      <td className="mono">{timeInLog ? formatClockTime(timeInLog.timestamp) : '—'}</td>
+                      <td className="mono">{timeOutLog ? formatClockTime(timeOutLog.timestamp) : '—'}</td>
+                      <td className="mono">{hours === null ? '—' : hours}</td>
+                      <td>
+                        <span className={`status-pill ${status === 'verified' ? 'status-pill-success' : status === 'absent' || status === 'flagged' ? 'status-pill-danger' : 'status-pill-warning'}`}>
+                          {status === 'verified' ? 'Verified' : status === 'absent' ? 'Absent' : status === 'flagged' ? 'Flagged' : 'Pending'}
+                        </span>
+                      </td>
+                      <td>
+                        {timeInLog && (
+                          <button
+                            className="eye-button"
+                            title="View photo & verify"
+                            onClick={() => setViewingAttendanceDay(student)}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path
+                                d="M4.5 8.5L6.2 5.5H9.8L11.5 8.5H19.5C20.05 8.5 20.5 8.95 20.5 9.5V18.5C20.5 19.05 20.05 19.5 19.5 19.5H4.5C3.95 19.5 3.5 19.05 3.5 18.5V9.5C3.5 8.95 3.95 8.5 4.5 8.5Z"
+                                stroke="currentColor"
+                                strokeWidth="1.7"
+                                strokeLinejoin="round"
+                              />
+                              <circle cx="12" cy="14" r="3.2" stroke="currentColor" strokeWidth="1.7" />
+                            </svg>
+                          </button>
+                        )}
+                      </td>
+                      <td>
+                        <div className="table-actions">
+                          <button className="eye-button" title="View student profile" onClick={() => setViewingStudent(student)}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path
+                                d="M2 12C2 12 5.5 5.5 12 5.5C18.5 5.5 22 12 22 12C22 12 18.5 18.5 12 18.5C5.5 18.5 2 12 2 12Z"
+                                stroke="currentColor"
+                                strokeWidth="1.8"
+                                strokeLinejoin="round"
+                              />
+                              <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+                            </svg>
+                          </button>
+                          <button className="eye-button" title="Edit rendered hours" onClick={() => setEditingStudent(student)}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path
+                                d="M4 20L4.7 16.6L15.3 6C15.9 5.4 16.9 5.4 17.5 6L18.5 7C19.1 7.6 19.1 8.6 18.5 9.2L7.9 19.8L4 20Z"
+                                stroke="currentColor"
+                                strokeWidth="1.7"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  const renderClassReportsTab = (classStudents: StudentRecord[]) => {
+    const classStudentIds = new Set(classStudents.map((s) => s.userId))
+    const sortedReports = [...reports]
+      .filter((r) => classStudentIds.has(r.studentId))
+      .sort(
+        (a, b) => new Date(formatTimestamp(b.submittedAt) || 0).getTime() - new Date(formatTimestamp(a.submittedAt) || 0).getTime(),
+      )
+    const classDocuments = preOjtDocuments.filter((d) => classStudentIds.has(d.studentId))
+
+    const reportRows: ReviewRow[] = sortedReports.map((report) => ({
+      id: report.id,
+      studentLabel: users[report.studentId]?.displayName || users[report.studentId]?.studentIdCode || report.studentId,
+      typeLabel: `${report.type.charAt(0).toUpperCase()}${report.type.slice(1)} report`,
+      status: report.status,
+      submittedLabel: `Submitted ${formatTimestamp(report.submittedAt) || 'on an unknown date'}`,
+      content: report.content,
+      fileUrl: report.fileUrl,
+      fileLinkLabel: 'View attachment',
+      onApprove: () => updateReportStatus(report.id, 'approved'),
+      onReject: () => updateReportStatus(report.id, 'rejected'),
+    }))
+
+    const documentRows: ReviewRow[] = classDocuments.map((document) => ({
+      id: document.id,
+      studentLabel: users[document.studentId]?.displayName || users[document.studentId]?.studentIdCode || document.studentId,
+      typeLabel: document.docType,
+      status: document.status,
+      submittedLabel: 'Submitted for review',
+      fileUrl: document.fileUrl,
+      fileLinkLabel: 'View document',
+      onApprove: () => updateDocumentStatus(document.id, 'approved'),
+      onReject: () => updateDocumentStatus(document.id, 'rejected'),
+    }))
+
+    return (
+      <div className="module-grid">
+        <ReviewRowList
+          title="Submitted reports"
+          subtitle="Daily, weekly, and narrative reports submitted by students."
+          emptyTitle="No reports submitted yet"
+          emptySubtitle="Daily, weekly, and narrative reports from students will show up here."
+          items={reportRows}
+        />
+        <ReviewRowList
+          title="Pre-OJT documents"
+          subtitle="MOA, waivers, and other onboarding documents."
+          emptyTitle="No documents submitted yet"
+          emptySubtitle="MOA, waivers, and other onboarding documents from students will show up here."
+          items={documentRows}
+        />
+      </div>
+    )
+  }
+
+  const renderHteEvaluations = () => (
+    <div className="module-card">
+      <h3>HTE evaluation results</h3>
+      <p>
+        Generate a secure link for each student's HTE supervisor — they don't need an account. Results appear here
+        automatically once submitted.
+      </p>
+      <div className="review-list">
+        {students.length === 0 && (
+          <EmptyState title="No students yet" subtitle="Add students to a class to start collecting HTE evaluations." />
+        )}
+        {students.map((student) => {
+          const link = [...hteEvaluationLinks]
+            .filter((l) => l.studentId === student.userId)
+            .sort((a, b) => new Date(b.expiresAt || 0).getTime() - new Date(a.expiresAt || 0).getTime())[0]
+          const evaluation = hteEvaluations.find((e) => e.studentId === student.userId)
+          const label = users[student.userId]?.displayName || users[student.userId]?.studentIdCode || student.userId
+          const statusClass = evaluation ? 'status-approved' : link ? 'status-pending' : 'status-eligible'
+          const statusLabel = evaluation ? 'Submitted' : link ? 'Awaiting response' : 'Not sent'
+          const avatarStyle = avatarColor(student.userId)
+
+          return (
+            <div className="review-item" key={student.id}>
+              <div className="review-item-header">
+                <div className="review-item-person">
+                  <span className="review-item-avatar" style={{ background: avatarStyle.bg, color: avatarStyle.fg }}>
+                    {initials(label)}
+                  </span>
+                  <div>
+                    <strong>{label}</strong>
+                    <span className="review-meta">
+                      {classes.find((c) => c.id === student.classId)?.name || 'Unassigned'}
+                    </span>
+                  </div>
+                </div>
+                <span className={`status-badge ${statusClass}`}>{statusLabel}</span>
+              </div>
+
+              {evaluation ? (
+                <div className="hte-scores">
+                  {Object.entries(evaluation.scores).map(([criterion, score]) => (
+                    <div className="hte-score-row" key={criterion}>
+                      <span>{criterion}</span>
+                      <strong>{score}/5</strong>
+                    </div>
+                  ))}
+                  {evaluation.comments && <p className="review-content">"{evaluation.comments}"</p>}
+                  {evaluation.supervisorName && (
+                    <p className="review-meta">— {evaluation.supervisorName}, HTE Supervisor</p>
+                  )}
+                </div>
+              ) : (
+                <div className="review-actions">
+                  <button className="secondary-button" onClick={() => generateHteEvaluationLink(student.userId)}>
+                    {link ? 'Generate new link' : 'Generate evaluation link'}
+                  </button>
+                </div>
+              )}
+
+              {generatedHteLink?.studentId === student.userId && !evaluation && (
+                <div className="credential-panel">
+                  <p className="modal-hint hte-link-ready">Evaluation link ready</p>
+                  <div className="hte-link-value">{generatedHteLink.url}</div>
+                  <button
+                    className="secondary-button"
+                    onClick={() => navigator.clipboard.writeText(generatedHteLink.url)}
+                  >
+                    Copy link
+                  </button>
+                  <p className="modal-hint">
+                    Share this with the student's HTE supervisor. It expires in 14 days and can only be used once.
+                  </p>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+
+  const renderFinalAssessment = () => {
+    const eligible = students.filter(
+      (s) => s.renderedHours >= s.requiredHours && s.completionStatus !== 'completed',
+    )
+    const completed = students.filter((s) => s.completionStatus === 'completed')
+
+    const renderRow = (student: StudentRecord, action: React.ReactNode) => {
+      const name = users[student.userId]?.displayName || users[student.userId]?.studentIdCode || student.userId
+      const avatarStyle = avatarColor(student.userId)
+      return (
+        <div className="review-item" key={student.id}>
+          <div className="review-item-header">
+            <div className="review-item-person">
+              <span className="review-item-avatar" style={{ background: avatarStyle.bg, color: avatarStyle.fg }}>
+                {initials(name)}
+              </span>
+              <div>
+                <strong>{name}</strong>
+                <span className="review-meta">
+                  {classes.find((c) => c.id === student.classId)?.name || 'Unassigned'} · {student.renderedHours}/
+                  {student.requiredHours} hrs
+                </span>
+              </div>
+            </div>
+            <span className={`status-badge ${student.completionStatus === 'completed' ? 'status-completed' : 'status-eligible'}`}>
+              {student.completionStatus === 'completed' ? 'Completed' : 'Eligible'}
+            </span>
+          </div>
+          {action}
+        </div>
+      )
+    }
+
+    return (
+      <div className="module-grid">
+        <section className="module-card">
+          <h3>Eligible for completion</h3>
+          <p>Students who have met their required OJT hours and are ready to be confirmed complete.</p>
+          <div className="review-list">
+            {eligible.length === 0 && (
+              <EmptyState
+                title="No students are currently eligible"
+                subtitle="Students appear here once they've met their required OJT hours."
+              />
+            )}
+            {eligible.map((student) =>
+              renderRow(
+                student,
+                <div className="review-actions">
+                  <button className="primary-button" onClick={() => markStudentCompleted(student.id)}>
+                    Mark internship completed
+                  </button>
+                </div>,
+              ),
+            )}
+          </div>
+        </section>
+        <section className="module-card">
+          <h3>Completed internships</h3>
+          <p>Students whose OJT has been confirmed complete for this school year.</p>
+          <div className="review-list">
+            {completed.length === 0 && (
+              <EmptyState
+                title="No completed internships yet"
+                subtitle="Students appear here once their OJT is marked complete."
+              />
+            )}
+            {completed.map((student) =>
+              renderRow(
+                student,
+                <div className="review-actions">
+                  <button className="secondary-button" onClick={() => reopenStudentInternship(student.id)}>
+                    Reopen
+                  </button>
+                </div>,
+              ),
+            )}
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  const renderSipp = () => (
+    <div className="module-card">
+      <h3>SIPP report</h3>
+      <p>
+        Export a Student Internship Placement Program summary — student, HTE placement, supervisor contact, hours,
+        and completion status, with a signature block for endorsement.
+      </p>
+      <div className="button-row">
+        <button className="primary-button" onClick={exportPdf}>
+          Export PDF
+        </button>
+        <button className="secondary-button" onClick={exportCsv}>
+          Export CSV
+        </button>
+      </div>
+      <p className="modal-hint">
+        Field set is based on standard SIPP placement reporting. Cross-check against the current CMO 104 s. 2017
+        requirements before citing this as fully compliant.
+      </p>
+    </div>
+  )
+
+  const handleAddHte = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!newHteName.trim() || !newHteSupervisorName.trim()) {
+      setAddHteError('Enter at least the company name and supervisor name.')
+      return
+    }
+    setAddHteError('')
+    setAddingHte(true)
+    try {
+      await addHte({
+        name: newHteName.trim(),
+        address: newHteAddress.trim(),
+        supervisorName: newHteSupervisorName.trim(),
+        supervisorEmail: newHteSupervisorEmail.trim(),
+        supervisorPhone: newHteSupervisorPhone.trim(),
+      })
+      setNewHteName('')
+      setNewHteAddress('')
+      setNewHteSupervisorName('')
+      setNewHteSupervisorEmail('')
+      setNewHteSupervisorPhone('')
+    } catch (error) {
+      setAddHteError(error instanceof Error ? error.message : 'Could not enroll this HTE. Please try again.')
+    } finally {
+      setAddingHte(false)
+    }
+  }
+
+  const renderHteManagement = () => (
+    <div className="module-grid">
+      <div className="module-card">
+        <h3>Enrolled HTEs</h3>
+        <p>Host Training Establishments available for student assignment.</p>
+        <div className="review-list">
+          {htes.length === 0 && (
+            <EmptyState title="No HTEs enrolled yet" subtitle="Enroll one using the form to make it assignable to students." />
+          )}
+          {htes.map((hte) => {
+            const chipStyle = avatarColor(hte.id)
+            return (
+              <div className="review-item" key={hte.id}>
+                <div className="review-item-header">
+                  <div className="review-item-person">
+                    <span className="hte-avatar" style={{ background: chipStyle.bg, color: chipStyle.fg }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="4.5" y="3.5" width="11" height="17" rx="1" stroke="currentColor" strokeWidth="1.8" />
+                        <path d="M15.5 20V9.5C15.5 8.9 16 8.5 16.5 8.5H19C19.6 8.5 20 8.9 20 9.5V20" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                        <path d="M7.5 7H12.5M7.5 10H12.5M7.5 13H12.5M7.5 16H12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                      </svg>
+                    </span>
+                    <div>
+                      <strong>{hte.name}</strong>
+                      <span className="review-meta no-capitalize">{hte.address || 'No address on file'}</span>
+                    </div>
+                  </div>
+                </div>
+                <p className="review-content">
+                  {hte.supervisorName}
+                  {hte.supervisorEmail ? ` · ${hte.supervisorEmail}` : ''}
+                  {hte.supervisorPhone ? ` · ${hte.supervisorPhone}` : ''}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      <div className="module-card">
+        <h3>Enroll HTE</h3>
+        <p>Add a new Host Training Establishment your students can be assigned to.</p>
+        <form className="module-form" onSubmit={handleAddHte}>
+          <label>
+            Company name
+            <input value={newHteName} onChange={(e) => setNewHteName(e.target.value)} placeholder="e.g. Marbel City IT Solutions" />
+          </label>
+          <label>
+            Address
+            <input value={newHteAddress} onChange={(e) => setNewHteAddress(e.target.value)} placeholder="e.g. Koronadal City" />
+          </label>
+          <label>
+            Supervisor name
+            <input
+              value={newHteSupervisorName}
+              onChange={(e) => setNewHteSupervisorName(e.target.value)}
+              placeholder="e.g. Engr. Santos"
+            />
+          </label>
+          <label>
+            Supervisor email
+            <input
+              type="email"
+              value={newHteSupervisorEmail}
+              onChange={(e) => setNewHteSupervisorEmail(e.target.value)}
+              placeholder="supervisor@company.com"
+            />
+          </label>
+          <label>
+            Supervisor phone
+            <input
+              value={newHteSupervisorPhone}
+              onChange={(e) => setNewHteSupervisorPhone(e.target.value)}
+              placeholder="09XX-XXX-XXXX"
+            />
+          </label>
+          {addHteError && <p className="error-text">{addHteError}</p>}
+          <button type="submit" className="primary-button" disabled={addingHte}>
+            {addingHte ? 'Enrolling…' : 'Enroll HTE'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+
+  const handleAddCoordinator = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setAddCoordinatorError('')
+    setAddingCoordinator(true)
+    try {
+      await addCoordinatorAccount(newCoordinatorName, newCoordinatorEmail, newCoordinatorPassword)
+      setNewCoordinatorName('')
+      setNewCoordinatorEmail('')
+      setNewCoordinatorPassword('')
+    } catch (error) {
+      setAddCoordinatorError(error instanceof Error ? error.message : 'Could not create the account. Please try again.')
+    } finally {
+      setAddingCoordinator(false)
+    }
+  }
+
+  const updatePreferencesField = <K extends keyof SystemPreferencesRecord>(field: K, value: SystemPreferencesRecord[K]) => {
+    setPreferences((current) => ({ ...current, [field]: value }))
+    setPreferencesSaved(false)
+  }
+
+  const handleSavePreferences = async () => {
+    setSavingPreferences(true)
+    try {
+      if (user && user.id !== 'demo-coordinator') {
+        await setDoc(doc(db, 'settings', 'global'), preferences, { merge: true })
+      }
+      setPreferencesSaved(true)
+    } catch (error) {
+      console.error('Failed to save system preferences:', error)
+    } finally {
+      setSavingPreferences(false)
+    }
+  }
+
+  const renderSettings = () => {
+    if (!user) return null
+    const coordinatorList = Object.values(coordinators).sort((a, b) => a.displayName.localeCompare(b.displayName))
+
+    return (
+      <div className="module-grid">
+        <div className="module-card">
+          <h3>System Preferences</h3>
+          <div className="preferences-grid">
+            <label className="preferences-row">
+              <span className="preferences-label">Institution Name</span>
+              <input
+                value={preferences.institutionName}
+                onChange={(e) => updatePreferencesField('institutionName', e.target.value)}
+              />
+            </label>
+            <label className="preferences-row">
+              <span className="preferences-label">Department</span>
+              <input value={preferences.department} onChange={(e) => updatePreferencesField('department', e.target.value)} />
+            </label>
+            <label className="preferences-row">
+              <span className="preferences-label">Required OJT Hours</span>
+              <input
+                type="number"
+                min={0}
+                value={preferences.defaultRequiredHours}
+                onChange={(e) => updatePreferencesField('defaultRequiredHours', Number(e.target.value) || 0)}
+              />
+            </label>
+            <label className="preferences-row">
+              <span className="preferences-label">Academic Year</span>
+              <input value={preferences.academicYear} onChange={(e) => updatePreferencesField('academicYear', e.target.value)} />
+            </label>
+            <label className="preferences-row">
+              <span className="preferences-label">Semester</span>
+              <select value={preferences.semester} onChange={(e) => updatePreferencesField('semester', e.target.value)}>
+                {TERM_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="preferences-row">
+              <span className="preferences-label">Absence Alert Threshold</span>
+              <input
+                type="number"
+                min={1}
+                value={preferences.absenceAlertThresholdDays}
+                onChange={(e) => updatePreferencesField('absenceAlertThresholdDays', Math.max(1, Number(e.target.value) || 1))}
+              />
+            </label>
+          </div>
+          <p className="modal-hint">
+            These defaults are used when creating a new class, and the absence alert threshold controls how many
+            consecutive no-time-in days trigger a coordinator notification.
+          </p>
+          <button className="primary-button" onClick={handleSavePreferences} disabled={savingPreferences}>
+            {savingPreferences ? 'Saving…' : 'Save Changes'}
+          </button>
+          {preferencesSaved && <span className="preferences-saved-note">Saved</span>}
+        </div>
+
+        <div className="module-card">
+          <h3>Coordinator accounts</h3>
+          <p>Manage who has access to this coordinator portal.</p>
+          <div className="review-list">
+            {coordinatorList.map((c) => (
+              <div className="review-item" key={c.id}>
+                <div className="review-item-header">
+                  <div>
+                    <strong>{c.displayName}</strong>
+                    <span className="review-meta no-capitalize">{c.email}</span>
+                  </div>
+                  <span className="status-badge status-approved">{c.role}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <form className="module-form" onSubmit={handleAddCoordinator}>
+            <h4>Add coordinator</h4>
+            <label>
+              Full name
+              <input value={newCoordinatorName} onChange={(e) => setNewCoordinatorName(e.target.value)} placeholder="e.g. Maria Cruz" />
+            </label>
+            <label>
+              Email
+              <input
+                type="email"
+                value={newCoordinatorEmail}
+                onChange={(e) => setNewCoordinatorEmail(e.target.value)}
+                placeholder="coordinator@ndmu.edu.ph"
+              />
+            </label>
+            <label>
+              Temporary password
+              <input
+                type="password"
+                value={newCoordinatorPassword}
+                onChange={(e) => setNewCoordinatorPassword(e.target.value)}
+                placeholder="Minimum 6 characters"
+              />
+            </label>
+            {addCoordinatorError && <p className="error-text">{addCoordinatorError}</p>}
+            <button type="submit" className="primary-button" disabled={addingCoordinator}>
+              {addingCoordinator ? 'Creating…' : 'Create coordinator account'}
+            </button>
+          </form>
+        </div>
+
+        <div className="module-card">
+          <h3>Profile & settings</h3>
+          <p>Your coordinator profile.</p>
+          <div className="profile-row">
+            <strong>Name:</strong>
+            <span>{user.displayName}</span>
+          </div>
+          <div className="profile-row">
+            <strong>Email:</strong>
+            <span>{user.email}</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const handleLogout = async () => {
+    try {
+      await auth.signOut()
+    } catch (error) {
+      console.error('Logout failed:', error)
+    }
+    localStorage.removeItem('ojtrack_demo_user')
+    setUser(null)
+  }
+
+  const renderModule = () => {
+    switch (selectedModule) {
+      case 'Dashboard':
+        return renderDashboard()
+      case 'Class Management':
+        return renderClassManagement()
+      case 'Enroll HTE':
+        return renderHteManagement()
+      case 'HTE Evaluation Results':
+        return renderHteEvaluations()
+      case 'Final Assessment & Completion':
+        return renderFinalAssessment()
+      case 'SIPP/CHED Report Generation':
+        return renderSipp()
+      case 'Settings/Profile':
+        return renderSettings()
+      default:
+        return <p>Module unavailable.</p>
+    }
+  }
+
+  const evaluationToken = new URLSearchParams(window.location.search).get('evaluate')
+  if (evaluationToken) {
+    return <HteEvaluationForm token={evaluationToken} />
+  }
+
+  if (loading || dashboardLoading) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-spinner" />
+        <span>Loading OJTrack…</span>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <Login onLoginSuccess={setUser} />
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <div className="sidebar-brand">
+            <CeacMark size={26} />
+            <h1>OJTrack</h1>
+          </div>
+          <p>College of Engineering, Architecture and Computing</p>
+        </div>
+        <nav>
+          {modules.map((module) => (
+            <button
+              key={module}
+              className={selectedModule === module ? 'nav-button active' : 'nav-button'}
+              onClick={() => setSelectedModule(module)}
+            >
+              <span className="nav-button-icon">{moduleIcons[module]}</span>
+              <span>{module}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="sidebar-footer">
+          <p>{user.displayName}</p>
+          <button onClick={handleLogout} className="logout-button">Logout</button>
+        </div>
+      </aside>
+      <main className="main-panel">
+        <header className="topbar">
+          <div>
+            <h2>{selectedModule}</h2>
+            <p>Managing internship coordination for the College of Engineering, Architecture and Computing.</p>
+          </div>
+          <div className="badge-wrap">
+            {liveUpdatesActive && <div className="live-badge">Live updates</div>}
+            <button
+              className="theme-toggle-button"
+              onClick={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to night mode'}
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to night mode'}
+            >
+              {theme === 'dark' ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="12" cy="12" r="4.2" stroke="currentColor" strokeWidth="2" />
+                  <path
+                    d="M12 2.5V5M12 19V21.5M4.2 4.2L6 6M18 18L19.8 19.8M2.5 12H5M19 12H21.5M4.2 19.8L6 18M18 6L19.8 4.2"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path
+                    d="M20.5 14.5A8.5 8.5 0 119.5 3.5a7 7 0 0011 11z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
+            </button>
+            <NotificationsBell
+              notifications={notifications}
+              classes={classes}
+              onMarkAllRead={markAllNotificationsRead}
+              onOpenClass={(classId) => openClass(classId)}
+            />
+            <div className="badge">{user.role.toUpperCase()}</div>
+          </div>
+        </header>
+
+        <section className="content-area">{renderModule()}</section>
+      </main>
+
+      {editingStudent && (
+        <EditHoursModal
+          student={editingStudent}
+          studentLabel={`Student ID: ${users[editingStudent.userId]?.studentIdCode || editingStudent.userId}`}
+          onClose={() => setEditingStudent(null)}
+          onSave={saveHoursCorrection}
+        />
+      )}
+
+      {creatingClass && (
+        <CreateClassModal
+          onClose={() => setCreatingClass(false)}
+          onCreate={addClass}
+          defaults={{
+            schoolYear: preferences.academicYear,
+            term: preferences.semester,
+            requiredHours: preferences.defaultRequiredHours,
+          }}
+        />
+      )}
+
+      {assigningHte && (
+        <AssignHteModal
+          student={assigningHte}
+          studentUser={users[assigningHte.userId]}
+          htes={htes}
+          onClose={() => setAssigningHte(null)}
+          onAssign={(hteId) => assignStudentHte(assigningHte.id, hteId)}
+        />
+      )}
+
+      {viewingStudent && (
+        <StudentProfileModal
+          student={viewingStudent}
+          studentUser={users[viewingStudent.userId]}
+          hte={htes.find((h) => h.id === viewingStudent.assignedHteId)}
+          className={classes.find((c) => c.id === viewingStudent.classId)?.name || 'Unassigned'}
+          attendanceLogs={attendanceLogs.filter((log) => log.studentId === viewingStudent.userId)}
+          onClose={() => setViewingStudent(null)}
+          onAssignHte={() => {
+            setAssigningHte(viewingStudent)
+            setViewingStudent(null)
+          }}
+          onRemove={() => {
+            removeStudentFromClass(viewingStudent)
+            setViewingStudent(null)
+          }}
+        />
+      )}
+
+      {viewingAttendanceDay &&
+        (() => {
+          const todayStart = new Date()
+          todayStart.setHours(0, 0, 0, 0)
+          const todaysStudentLogs = attendanceLogs.filter(
+            (log) => log.studentId === viewingAttendanceDay.userId && new Date(formatTimestamp(log.timestamp) || 0) >= todayStart,
+          )
+          return (
+            <AttendancePhotoModal
+              studentUser={users[viewingAttendanceDay.userId]}
+              dateLabel={todayStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+              timeInLog={todaysStudentLogs.find((log) => log.type === 'time_in')}
+              timeOutLog={todaysStudentLogs.find((log) => log.type === 'time_out')}
+              onClose={() => setViewingAttendanceDay(null)}
+              onVerify={(logId) => updateAttendanceLogStatus(logId, 'verified')}
+              onFlag={(logId) => updateAttendanceLogStatus(logId, 'flagged')}
+            />
+          )
+        })()}
+
+      {editingClass && (
+        <EditClassModal
+          classItem={editingClass}
+          studentCount={students.filter((s) => s.classId === editingClass.id).length}
+          onClose={() => setEditingClass(null)}
+          onSave={(updates) => updateClass(editingClass.id, updates)}
+          onDelete={() => deleteClass(editingClass.id)}
+        />
+      )}
+    </div>
+  )
+}
+
+export default App

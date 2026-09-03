@@ -1,0 +1,33 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Attendance photos
+    match /attendance/{studentId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if request.auth.uid == studentId;
+    }
+
+    // Reports
+    match /reports/{studentId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if request.auth.uid == studentId;
+    }
+
+    // Pre-OJT Documents
+    match /documents/{studentId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if request.auth.uid == studentId;
+    }
+
+    // Portfolio
+    match /portfolio/{studentId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if request.auth.uid == studentId;
+    }
+  }
+}
