@@ -273,7 +273,7 @@ function App() {
     try {
       const stored = localStorage.getItem('ojtrack_theme')
       if (stored === 'light' || stored === 'dark') return stored
-    } catch (e) {}
+    } catch {}
     return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   })
 
@@ -281,7 +281,7 @@ function App() {
     document.documentElement.setAttribute('data-theme', theme)
     try {
       localStorage.setItem('ojtrack_theme', theme)
-    } catch (e) {}
+    } catch {}
   }, [theme])
 
   const [user, setUser] = useState<UserRecord | null>(null)
@@ -336,7 +336,7 @@ function App() {
         setLoading(false)
         return
       }
-    } catch (e) {}
+    } catch {}
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {

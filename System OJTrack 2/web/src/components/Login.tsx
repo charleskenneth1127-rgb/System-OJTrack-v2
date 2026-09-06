@@ -53,7 +53,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     }
     try {
       localStorage.setItem('ojtrack_demo_user', JSON.stringify(demoUser))
-    } catch (e) {}
+    } catch {}
     onLoginSuccess(demoUser)
   }
 

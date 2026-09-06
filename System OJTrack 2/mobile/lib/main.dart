@@ -147,6 +147,7 @@ class _AuthGateState extends State<AuthGate> {
         return StudentHomePage(
           demoMode: true,
           displayName: _displayName!,
+          firebaseAvailable: false,
           onExitDemo: () => setState(() => _displayName = null),
         );
       }
@@ -220,12 +221,18 @@ class StudentHomePage extends StatefulWidget {
   final bool demoMode;
   final String displayName;
   final VoidCallback? onExitDemo;
+  // False only for the true-offline fallback (Firebase.initializeApp() itself
+  // failed) — the Attendance/Reports/Documents/Portfolio tabs all talk to
+  // Firestore directly and would otherwise crash with core/no-app the moment
+  // they're built.
+  final bool firebaseAvailable;
 
   const StudentHomePage({
     super.key,
     required this.demoMode,
     required this.displayName,
     this.onExitDemo,
+    this.firebaseAvailable = true,
   });
 
   @override
@@ -340,35 +347,35 @@ class _StudentHomePageState extends State<StudentHomePage> {
     }, onError: (Object e) => debugPrint('Notifications listener failed: $e'));
   }
 
-  void _navigateTo(int index) {
+  static const List<String> _tabLabels = ['Home', 'Attendance', 'Reports', 'Documents', 'Portfolio'];
+
+  /// Attendance/Reports/Documents/Portfolio all talk to Firestore directly,
+  /// so in true offline mode (no Firebase app at all) they're swapped for a
+  /// placeholder instead of crashing the moment they're built.
+  Widget _tabContent(int index) {
+    if (!widget.firebaseAvailable) {
+      return _OfflineFeaturePlaceholder(featureName: _tabLabels[index]);
+    }
     switch (index) {
       case 1:
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const AttendanceScreen()),
-        );
-        break;
+        return const AttendanceScreen();
       case 2:
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ReportsScreen()),
-        );
-        break;
+        return const ReportsScreen();
       case 3:
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const DocumentsScreen()),
-        );
-        break;
+        return const DocumentsScreen();
       case 4:
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const PortfolioScreen()),
-        );
-        break;
+        return const PortfolioScreen();
       default:
-        break;
+        return const SizedBox.shrink();
     }
+  }
+
+  void _navigateTo(int index) {
+    if (index < 1 || index > 4) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => _tabContent(index)),
+    );
   }
 
   /// Selects [index]. On the phone layout this also pushes the matching
@@ -516,10 +523,10 @@ class _StudentHomePageState extends State<StudentHomePage> {
               index: _selectedIndex,
               children: [
                 _buildDesktopHomePane(context),
-                const AttendanceScreen(),
-                const ReportsScreen(),
-                const DocumentsScreen(),
-                const PortfolioScreen(),
+                _tabContent(1),
+                _tabContent(2),
+                _tabContent(3),
+                _tabContent(4),
               ],
             ),
           ),
@@ -759,6 +766,44 @@ class _StudentHomePageState extends State<StudentHomePage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Shown in place of a tab that needs Firestore/Auth when the app is running
+/// with no Firebase app at all (see [StudentHomePage.firebaseAvailable]).
+class _OfflineFeaturePlaceholder extends StatelessWidget {
+  final String featureName;
+
+  const _OfflineFeaturePlaceholder({required this.featureName});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(featureName)),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_off, size: 48, color: Colors.grey.shade400),
+              const SizedBox(height: 16),
+              Text(
+                '$featureName needs an internet connection',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Reconnect and sign in again to use this feature.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
