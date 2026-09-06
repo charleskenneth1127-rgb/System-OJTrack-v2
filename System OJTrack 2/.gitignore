@@ -19,5 +19,8 @@ replay_pid*.log
 # JetBrains IDE
 .idea/
 
+# Personal Claude Code permissions (settings.json stays tracked; this doesn't)
+.claude/settings.local.json
+
 # Gradle build output that lands outside the redirected buildDir
 mobile/android/build/
