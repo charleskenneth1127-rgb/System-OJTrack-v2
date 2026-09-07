@@ -43,20 +43,6 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     }
   }
 
-  const handleDemoLogin = () => {
-    const demoUser: UserRecord = {
-      id: 'demo-coordinator',
-      displayName: 'Demo Coordinator',
-      email: 'demo@local',
-      role: 'coordinator',
-      createdAt: new Date().toISOString(),
-    }
-    try {
-      localStorage.setItem('ojtrack_demo_user', JSON.stringify(demoUser))
-    } catch {}
-    onLoginSuccess(demoUser)
-  }
-
   return (
     <div className="login-container">
       <div className="login-card">
@@ -92,13 +78,6 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
           {error && <p className="error-text">{error}</p>}
           <button type="submit" disabled={loading}>
             {loading ? 'Logging in...' : 'Sign In'}
-          </button>
-          <button
-            type="button"
-            className="demo-button"
-            onClick={handleDemoLogin}
-          >
-            Continue as Demo Coordinator
           </button>
         </form>
       </div>

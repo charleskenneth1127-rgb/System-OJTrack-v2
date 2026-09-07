@@ -10,7 +10,17 @@ import '../theme/ndmu_theme.dart';
 /// file, or null if the user backed out. Returns an [XFile] (not a
 /// dart:io File) so the same code works on Android, iOS, and web — web has
 /// no filesystem, so dart:io's File can't represent a picked image there.
-Future<XFile?> pickAttachment(BuildContext context) async {
+///
+/// [maxWidth]/[maxHeight] bound the picked image's dimensions — a raw
+/// camera/gallery photo can be 4000px+ per side and several MB, which is
+/// wasted upload time and Storage for something displayed at a few hundred
+/// pixels at most. image_picker downscales (preserving aspect ratio) and
+/// re-encodes at [imageQuality] itself, so this needs no extra dependency.
+Future<XFile?> pickAttachment(
+  BuildContext context, {
+  int maxWidth = 1600,
+  int maxHeight = 1600,
+}) async {
   final source = await showModalBottomSheet<ImageSource>(
     context: context,
     shape: const RoundedRectangleBorder(
@@ -42,7 +52,12 @@ Future<XFile?> pickAttachment(BuildContext context) async {
 
   if (source == null) return null;
   final picker = ImagePicker();
-  return picker.pickImage(source: source, imageQuality: 80);
+  return picker.pickImage(
+    source: source,
+    imageQuality: 80,
+    maxWidth: maxWidth.toDouble(),
+    maxHeight: maxHeight.toDouble(),
+  );
 }
 
 /// Uploads [file] to Firebase Storage under [storagePath] and returns its
@@ -123,6 +138,11 @@ Future<PickedAttachment?> pickDocumentAttachment(BuildContext context) async {
   final xfile = await picker.pickImage(
     source: choice == 'camera' ? ImageSource.camera : ImageSource.gallery,
     imageQuality: 80,
+    // Generous cap (unlike the 512px avatar case) since this is a photo of
+    // real paperwork — text needs to stay legible when the coordinator
+    // reviews it.
+    maxWidth: 1600,
+    maxHeight: 1600,
   );
   if (xfile == null) return null;
   final bytes = await xfile.readAsBytes();

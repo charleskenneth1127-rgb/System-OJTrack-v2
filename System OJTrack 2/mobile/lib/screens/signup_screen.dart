@@ -4,12 +4,17 @@ import 'package:flutter/material.dart';
 import '../theme/ndmu_theme.dart';
 import '../utils/student_account.dart';
 
-/// Self-registration for students. Unlike the coordinator-provisioned
-/// accounts (Student ID as login, temp password = ID), a self-registered
-/// student picks their own real email and password up front, so there's no
-/// forced first-login password change afterward. Once signed up, AuthGate
-/// routes them to JoinClassScreen since they won't have a students/{uid}
-/// doc yet.
+/// Self-registration for students. The account's actual Firebase Auth email
+/// is always the synthetic `studentId@ojtrack.local` — the same convention
+/// coordinator-provisioned accounts use (see updateStudentLoginId in Cloud
+/// Functions) — so a Student ID works as a login credential everywhere,
+/// self-registered or not. The optional "contact email" a student types
+/// here is stored separately (users/{uid}.contactEmail) purely for the
+/// coordinator to reach them; it never backs sign-in. Unlike
+/// coordinator-provisioned accounts, a self-registered student picks their
+/// own password up front, so there's no forced first-login change
+/// afterward. Once signed up, AuthGate routes them to JoinClassScreen since
+/// they won't have a students/{uid} doc yet.
 class SignUpScreen extends StatefulWidget {
   final VoidCallback onBackToLogin;
 
@@ -21,6 +26,7 @@ class SignUpScreen extends StatefulWidget {
 
 class _SignUpScreenState extends State<SignUpScreen> {
   final _nameController = TextEditingController();
+  final _studentIdController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
@@ -29,15 +35,20 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   Future<void> _handleSignUp() async {
     final name = _nameController.text.trim();
-    final email = _emailController.text.trim();
+    final studentId = _studentIdController.text.trim();
+    final contactEmail = _emailController.text.trim();
     final password = _passwordController.text;
 
     if (name.isEmpty) {
       setState(() => _errorMessage = 'Enter your full name.');
       return;
     }
-    if (!email.contains('@')) {
-      setState(() => _errorMessage = 'Enter a valid email address.');
+    if (studentId.isEmpty) {
+      setState(() => _errorMessage = 'Enter your Student ID.');
+      return;
+    }
+    if (contactEmail.isNotEmpty && !contactEmail.contains('@')) {
+      setState(() => _errorMessage = 'Enter a valid email address, or leave it blank.');
       return;
     }
     final passwordIssue = validatePasswordStrength(password);
@@ -52,13 +63,16 @@ class _SignUpScreenState extends State<SignUpScreen> {
     });
 
     try {
+      final loginEmail = studentIdToEmail(studentId);
       final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email,
+        email: loginEmail,
         password: password,
       );
       await FirebaseFirestore.instance.collection('users').doc(credential.user!.uid).set({
         'role': 'student',
-        'email': email,
+        'email': loginEmail,
+        'studentIdCode': studentId,
+        if (contactEmail.isNotEmpty) 'contactEmail': contactEmail,
         'displayName': name,
         'createdAt': DateTime.now().toIso8601String(),
         'mustChangePassword': false,
@@ -67,7 +81,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     } on FirebaseAuthException catch (e) {
       setState(() {
         _errorMessage = e.code == 'email-already-in-use'
-            ? 'An account with this email already exists. Try signing in instead.'
+            ? 'This Student ID is already registered. Try signing in instead, or double-check the ID.'
             : (e.message ?? 'Could not create your account.');
       });
     } finally {
@@ -78,6 +92,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _studentIdController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -176,10 +191,32 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           ),
                           const SizedBox(height: 14),
                           TextField(
+                            controller: _studentIdController,
+                            decoration: InputDecoration(
+                              labelText: 'Student ID',
+                              filled: true,
+                              fillColor: const Color(0xFFF6F7F3),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide.none,
+                              ),
+                              prefixIcon: const Icon(Icons.badge, color: NdmuColors.green),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: Text(
+                              'Your school-issued Student ID. You can sign in with it later instead of an email.',
+                              style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          TextField(
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
                             decoration: InputDecoration(
-                              labelText: 'Email',
+                              labelText: 'Contact email (optional)',
                               filled: true,
                               fillColor: const Color(0xFFF6F7F3),
                               border: OutlineInputBorder(

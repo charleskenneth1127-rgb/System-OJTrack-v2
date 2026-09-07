@@ -1,7 +1,7 @@
 import { deleteApp, getApps, initializeApp } from 'firebase/app'
 import { connectAuthEmulator, createUserWithEmailAndPassword, getAuth, signOut } from 'firebase/auth'
 import { collection, connectFirestoreEmulator, getDocs, getFirestore, query, where } from 'firebase/firestore'
-import { connectStorageEmulator, getStorage } from 'firebase/storage'
+import { connectStorageEmulator, getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage'
 
 // "demo-ojtrack" matches .firebaserc and is intentional: the Firebase Emulator
 // Suite treats any project ID prefixed "demo-" as offline/local-only — no real
@@ -101,4 +101,16 @@ async function createAuthAccountViaSecondaryApp(email: string, password: string)
 /** Creates a new coordinator's Firebase Auth account (real email, coordinator-chosen password). */
 export async function createCoordinatorAccount(email: string, password: string) {
   return createAuthAccountViaSecondaryApp(email, password)
+}
+
+/**
+ * Uploads a profile picture under avatars/{uid}/photo — a fixed filename so
+ * re-uploading replaces the old photo instead of accumulating copies — and
+ * returns its download URL. Matches storage.rules, which only lets a user
+ * write under their own uid.
+ */
+export async function uploadAvatar(uid: string, file: Blob): Promise<string> {
+  const avatarRef = ref(storage, `avatars/${uid}/photo`)
+  await uploadBytes(avatarRef, file)
+  return getDownloadURL(avatarRef)
 }

@@ -26,6 +26,22 @@ export async function getStudentDisplayName(studentUid: string): Promise<string>
 }
 
 /**
+ * A student's expected time-in comes from their assigned HTE (each company
+ * has one work schedule; many students share the same HTE) — not stored per
+ * student, so a coordinator sets it once per company instead of once per
+ * intern. Returns undefined if the student has no assigned HTE, or that HTE
+ * has no expectedTimeIn set (in which case lateness just isn't tracked).
+ */
+export async function resolveExpectedTimeIn(studentUid: string): Promise<string | undefined> {
+  const studentSnap = await db.collection('students').doc(studentUid).get();
+  const hteId = studentSnap.data()?.assignedHteId as string | undefined;
+  if (!hteId) return undefined;
+
+  const hteSnap = await db.collection('htes').doc(hteId).get();
+  return hteSnap.data()?.expectedTimeIn as string | undefined;
+}
+
+/**
  * createdAt is stored as an ISO string (not a Firestore serverTimestamp) to
  * match how the web/mobile clients already read and render NotificationRecord.createdAt.
  *

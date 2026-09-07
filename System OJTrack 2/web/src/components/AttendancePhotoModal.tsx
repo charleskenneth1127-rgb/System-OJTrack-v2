@@ -1,5 +1,6 @@
-import React from 'react'
+import React, { useState } from 'react'
 import type { AttendanceLogRecord, UserRecord } from '../types'
+import CorrectAttendanceTimeModal from './CorrectAttendanceTimeModal'
 
 interface AttendancePhotoModalProps {
   studentUser: UserRecord | undefined
@@ -9,11 +10,17 @@ interface AttendancePhotoModalProps {
   onClose: () => void
   onVerify: (logId: string) => void
   onFlag: (logId: string) => void
+  onCorrectTime: (log: AttendanceLogRecord, newTimestamp: Date, reason: string) => Promise<void> | void
+}
+
+const toDate = (value: unknown): Date | undefined => {
+  if (!value) return undefined
+  if (typeof value === 'string') return new Date(value)
+  return (value as { toDate?: () => Date }).toDate?.()
 }
 
 const formatTime = (value: unknown): string => {
-  if (!value) return '—'
-  const date = typeof value === 'string' ? new Date(value) : (value as { toDate?: () => Date }).toDate?.()
+  const date = toDate(value)
   if (!date) return '—'
   return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })
 }
@@ -32,7 +39,10 @@ const AttendancePhotoModal: React.FC<AttendancePhotoModalProps> = ({
   onClose,
   onVerify,
   onFlag,
+  onCorrectTime,
 }) => {
+  const [correctingLog, setCorrectingLog] = useState<{ log: AttendanceLogRecord; label: string } | null>(null)
+
   const renderLogPanel = (label: string, log: AttendanceLogRecord | undefined) => {
     if (!log) {
       return (
@@ -50,7 +60,10 @@ const AttendancePhotoModal: React.FC<AttendancePhotoModalProps> = ({
             <span className="profile-field-label">{label}</span>
             <p className="attendance-photo-time">{formatTime(log.timestamp)}</p>
           </div>
-          <span className={`status-badge status-${log.status}`}>{log.status}</span>
+          <div className="attendance-photo-badges">
+            {log.type === 'time_in' && log.late && <span className="status-badge status-flagged">late</span>}
+            <span className={`status-badge status-${log.status}`}>{log.status}</span>
+          </div>
         </div>
         {log.photoUrl ? (
           <a href={log.photoUrl} target="_blank" rel="noreferrer">
@@ -64,6 +77,9 @@ const AttendancePhotoModal: React.FC<AttendancePhotoModalProps> = ({
         )}
         {log.status === 'pending' && (
           <div className="review-actions">
+            <button className="secondary-button" onClick={() => setCorrectingLog({ log, label })}>
+              Correct time
+            </button>
             <button className="secondary-button" onClick={() => onFlag(log.id)}>
               Flag
             </button>
@@ -100,6 +116,17 @@ const AttendancePhotoModal: React.FC<AttendancePhotoModalProps> = ({
           </button>
         </div>
       </div>
+      {correctingLog && (
+        <CorrectAttendanceTimeModal
+          label={correctingLog.label}
+          currentTimestamp={toDate(correctingLog.log.timestamp) || new Date()}
+          onClose={() => setCorrectingLog(null)}
+          onSave={async (newTimestamp, reason) => {
+            await onCorrectTime(correctingLog.log, newTimestamp, reason)
+            setCorrectingLog(null)
+          }}
+        />
+      )}
     </div>
   )
 }

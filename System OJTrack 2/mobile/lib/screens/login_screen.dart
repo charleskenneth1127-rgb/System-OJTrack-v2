@@ -6,14 +6,12 @@ import '../utils/student_account.dart';
 class LoginScreen extends StatefulWidget {
   final bool offlineMode;
   final void Function(String displayName)? onOfflineSignIn;
-  final VoidCallback? onDemoSignIn;
   final VoidCallback? onCreateAccount;
 
   const LoginScreen({
     super.key,
     this.offlineMode = false,
     this.onOfflineSignIn,
-    this.onDemoSignIn,
     this.onCreateAccount,
   });
 
@@ -255,47 +253,6 @@ class _LoginScreenState extends State<LoginScreen> {
                               style: TextStyle(color: Colors.grey.shade600),
                             ),
                           ] else ...[
-                            if (widget.onDemoSignIn != null) ...[
-                              const SizedBox(height: 22),
-                              Row(
-                                children: [
-                                  Expanded(child: Divider(color: Colors.grey.shade300)),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                                    child: Text(
-                                      'OR',
-                                      style: TextStyle(
-                                        color: Colors.grey.shade500,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 12,
-                                        letterSpacing: 1,
-                                      ),
-                                    ),
-                                  ),
-                                  Expanded(child: Divider(color: Colors.grey.shade300)),
-                                ],
-                              ),
-                              const SizedBox(height: 22),
-                              OutlinedButton.icon(
-                                onPressed: widget.onDemoSignIn,
-                                icon: const Icon(Icons.visibility_outlined, color: NdmuColors.greenDark),
-                                label: const Text('Continue as Demo Student'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: NdmuColors.greenDark,
-                                  side: const BorderSide(color: NdmuColors.gold, width: 1.4),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Preview OJTrack with sample data — no account needed.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.grey.shade500, fontSize: 12.5),
-                              ),
-                            ],
                             if (widget.onCreateAccount != null) ...[
                               const SizedBox(height: 10),
                               TextButton(

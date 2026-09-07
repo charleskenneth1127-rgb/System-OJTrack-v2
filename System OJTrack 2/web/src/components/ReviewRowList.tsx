@@ -24,6 +24,15 @@ interface ReviewRowListProps {
 
 type Filter = 'all' | 'pending' | 'approved' | 'rejected'
 
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic']
+
+/** Storage download URLs carry a `?alt=media&token=...` query string after the extension. */
+const getFileExtension = (url: string): string => {
+  const withoutQuery = url.split('?')[0]
+  const dotIndex = withoutQuery.lastIndexOf('.')
+  return dotIndex === -1 ? '' : withoutQuery.slice(dotIndex + 1).toLowerCase()
+}
+
 /**
  * Dense, filterable review list — used for both Submitted Reports and
  * Pre-OJT Documents in the class Reports & Documents tab. One row per
@@ -118,7 +127,7 @@ const ReviewRowList: React.FC<ReviewRowListProps> = ({ title, subtitle, emptyTit
 
       {viewing && (
         <div className="modal-overlay" onClick={() => setViewing(null)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-card modal-card-wide" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div>
                 <h3>{viewing.typeLabel}</h3>
@@ -133,9 +142,24 @@ const ReviewRowList: React.FC<ReviewRowListProps> = ({ title, subtitle, emptyTit
             <div className="modal-body">
               <span className={`status-badge status-${viewing.status}`}>{viewing.status}</span>
               {viewing.content && <p className="review-content">{viewing.content}</p>}
+              {viewing.fileUrl &&
+                (() => {
+                  const extension = getFileExtension(viewing.fileUrl)
+                  if (IMAGE_EXTENSIONS.includes(extension)) {
+                    return (
+                      <a href={viewing.fileUrl} target="_blank" rel="noreferrer">
+                        <img src={viewing.fileUrl} alt={viewing.fileLinkLabel || 'Attachment preview'} className="review-file-image" />
+                      </a>
+                    )
+                  }
+                  if (extension === 'pdf') {
+                    return <embed src={viewing.fileUrl} type="application/pdf" className="review-file-pdf" />
+                  }
+                  return null
+                })()}
               {viewing.fileUrl && (
                 <a href={viewing.fileUrl} target="_blank" rel="noreferrer" className="review-file-link">
-                  {viewing.fileLinkLabel || 'View attachment'}
+                  {viewing.fileLinkLabel || 'View attachment'} ↗
                 </a>
               )}
               {!viewing.content && !viewing.fileUrl && <p className="modal-hint">No additional details attached.</p>}

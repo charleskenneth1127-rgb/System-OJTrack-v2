@@ -29,5 +29,11 @@ service firebase.storage {
       allow read: if isSignedIn();
       allow write: if request.auth.uid == studentId;
     }
+
+    // Profile pictures (students and coordinators)
+    match /avatars/{userId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if request.auth.uid == userId;
+    }
   }
 }

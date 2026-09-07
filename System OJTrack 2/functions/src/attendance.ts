@@ -2,10 +2,39 @@ import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/fire
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as logger from 'firebase-functions/logger';
 import { db } from './lib/admin';
-import { createNotification, getClassContextForStudent, getStudentDisplayName } from './lib/helpers';
+import { createNotification, getClassContextForStudent, getStudentDisplayName, resolveExpectedTimeIn } from './lib/helpers';
 
 /** Shifts longer than this are treated as a bad time-in/time-out pairing rather than real hours. */
 const MAX_SHIFT_HOURS = 16;
+
+const ATTENDANCE_TIME_ZONE = 'Asia/Manila';
+
+/**
+ * True if [actual] is more than [thresholdMinutes] past [expectedTimeIn]
+ * ("HH:mm", the assigned HTE's start time), compared in Asia/Manila local
+ * time regardless of what timezone the device that captured the photo was
+ * set to. Returns false (never late) if there's no expected time to compare
+ * against — an HTE the coordinator hasn't set a schedule for just doesn't
+ * get lateness tracked, rather than defaulting to some arbitrary hour.
+ */
+function isLate(actual: Date, expectedTimeIn: string | undefined, thresholdMinutes: number): boolean {
+  if (!expectedTimeIn) return false;
+  const match = /^(\d{1,2}):(\d{2})$/.exec(expectedTimeIn);
+  if (!match) return false;
+  const expectedMinutes = Number(match[1]) * 60 + Number(match[2]);
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: ATTENDANCE_TIME_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(actual);
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+  const actualMinutes = hour * 60 + minute;
+
+  return actualMinutes > expectedMinutes + thresholdMinutes;
+}
 
 /**
  * Pairs a time_out log with its time_in and computes the shift length, but
@@ -23,13 +52,25 @@ export const onAttendanceLogCreated = onDocumentCreated('attendance_logs/{logId}
   if (!studentId) return;
 
   if (log.type === 'time_in') {
+    const timeIn: Date | undefined = log.timestamp?.toDate?.();
+    let late = false;
+    if (timeIn) {
+      const [expectedTimeIn, settingsSnap] = await Promise.all([
+        resolveExpectedTimeIn(studentId),
+        db.collection('settings').doc('global').get(),
+      ]);
+      const thresholdMinutes = (settingsSnap.data()?.lateThresholdMinutes as number) ?? 15;
+      late = isLate(timeIn, expectedTimeIn, thresholdMinutes);
+      await snap.ref.update({ late });
+    }
+
     const context = await getClassContextForStudent(studentId);
     if (context) {
       const name = await getStudentDisplayName(studentId);
       await createNotification({
         recipientId: context.coordinatorId,
         type: 'attendance',
-        message: `${name} clocked in for OJT.`,
+        message: `${name} clocked in for OJT${late ? ' (late)' : ''}.`,
         classId: context.classId,
         studentId,
       });

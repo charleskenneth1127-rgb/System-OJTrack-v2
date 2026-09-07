@@ -125,7 +125,6 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   String? _displayName;
-  bool _demoMode = false;
   bool _showSignUp = false;
 
   Future<void> _handleLogout() async {
@@ -134,14 +133,6 @@ class _AuthGateState extends State<AuthGate> {
 
   @override
   Widget build(BuildContext context) {
-    if (_demoMode) {
-      return StudentHomePage(
-        demoMode: true,
-        displayName: 'Demo Student',
-        onExitDemo: () => setState(() => _demoMode = false),
-      );
-    }
-
     if (!widget.firebaseAvailable) {
       if (_displayName != null) {
         return StudentHomePage(
@@ -209,7 +200,6 @@ class _AuthGateState extends State<AuthGate> {
           return SignUpScreen(onBackToLogin: () => setState(() => _showSignUp = false));
         }
         return LoginScreen(
-          onDemoSignIn: () => setState(() => _demoMode = true),
           onCreateAccount: () => setState(() => _showSignUp = true),
         );
       },

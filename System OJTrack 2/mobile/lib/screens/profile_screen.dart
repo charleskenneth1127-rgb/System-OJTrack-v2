@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../theme/ndmu_theme.dart';
+import '../utils/submission_helpers.dart';
 import 'change_password_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -16,11 +17,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _savingEmail = false;
   bool _emailDirty = false;
   String? _lastLoadedEmail;
+  bool _uploadingPhoto = false;
 
   @override
   void dispose() {
     _contactEmailController.dispose();
     super.dispose();
+  }
+
+  Future<void> _changePhoto(String uid) async {
+    // Displayed at 58px at most, so there's no reason to keep a full-size
+    // photo around — this keeps uploads fast and Storage usage small.
+    final file = await pickAttachment(context, maxWidth: 512, maxHeight: 512);
+    if (file == null) return;
+
+    setState(() => _uploadingPhoto = true);
+    try {
+      final photoUrl = await uploadAttachment(file, 'avatars/$uid/photo');
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({'photoUrl': photoUrl});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not upload photo: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
+    }
   }
 
   Future<void> _saveContactEmail(String uid) async {
@@ -64,6 +87,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 final displayName = (data['displayName'] as String?) ?? 'Intern';
                 final studentIdCode = (data['studentIdCode'] as String?) ?? '—';
                 final contactEmail = (data['contactEmail'] as String?) ?? '';
+                final photoUrl = data['photoUrl'] as String?;
 
                 if (_lastLoadedEmail != contactEmail) {
                   _lastLoadedEmail = contactEmail;
@@ -85,13 +109,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                       child: Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withAlpha((0.16 * 255).round()),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.person, color: Colors.white, size: 30),
+                          Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Container(
+                                width: 58,
+                                height: 58,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withAlpha((0.16 * 255).round()),
+                                  shape: BoxShape.circle,
+                                  image: photoUrl != null
+                                      ? DecorationImage(image: NetworkImage(photoUrl), fit: BoxFit.cover)
+                                      : null,
+                                ),
+                                child: photoUrl == null
+                                    ? const Icon(Icons.person, color: Colors.white, size: 30)
+                                    : null,
+                              ),
+                              Positioned(
+                                bottom: -2,
+                                right: -2,
+                                child: GestureDetector(
+                                  onTap: _uploadingPhoto ? null : () => _changePhoto(user.uid),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(5),
+                                    decoration: const BoxDecoration(
+                                      color: NdmuColors.gold,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: _uploadingPhoto
+                                        ? const SizedBox(
+                                            width: 12,
+                                            height: 12,
+                                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                          )
+                                        : const Icon(Icons.camera_alt, color: Colors.white, size: 12),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(width: 16),
                           Expanded(

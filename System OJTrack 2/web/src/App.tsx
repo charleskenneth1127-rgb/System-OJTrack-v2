@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
 import './App.css'
 import Login from './components/Login'
+import Avatar from './components/Avatar'
 import EditHoursModal from './components/EditHoursModal'
 import EditClassModal from './components/EditClassModal'
+import EditHteModal from './components/EditHteModal'
 import CreateClassModal from './components/CreateClassModal'
 import CeacMark from './components/CeacMark'
 import NotificationsBell from './components/NotificationsBell'
@@ -30,12 +32,14 @@ import type {
   HteRecord,
   SystemPreferencesRecord,
 } from './types'
-import { auth, createCoordinatorAccount, db, generateUniqueJoinCode, studentIdToEmail } from './firebase'
+import { auth, createCoordinatorAccount, db, generateUniqueJoinCode, studentIdToEmail, uploadAvatar } from './firebase'
+import { resizeImageFile } from './utils/imageResize'
+import { isLate } from './utils/attendance'
 import { registerPushNotifications } from './push'
 import { avatarColor, classCardStyle, initials } from './utils/avatarStyle'
 import { TERM_OPTIONS } from './constants'
 import { onAuthStateChanged } from 'firebase/auth'
-import { addDoc, collection, deleteDoc, doc, getDoc, onSnapshot, query, setDoc, updateDoc, where } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, deleteField, doc, getDoc, onSnapshot, query, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
 
 const modules = [
   'Dashboard',
@@ -167,17 +171,10 @@ const DEFAULT_PREFERENCES: SystemPreferencesRecord = {
   academicYear: '2025-2026',
   semester: '2nd Semester',
   absenceAlertThresholdDays: 2,
+  lateThresholdMinutes: 15,
 }
 
-const initialCoordinators: Record<string, UserRecord> = {
-  'demo-coordinator': {
-    id: 'demo-coordinator',
-    displayName: 'Demo Coordinator',
-    email: 'demo@local',
-    role: 'coordinator',
-    createdAt: new Date().toISOString(),
-  },
-}
+const initialCoordinators: Record<string, UserRecord> = {}
 
 const initialNotifications: NotificationRecord[] = [
   { id: 'note-1', recipientId: 'coord-1', type: 'attendance', message: 'Student Jane Doe submitted a new attendance log.', read: false, createdAt: new Date().toISOString() },
@@ -268,6 +265,12 @@ const formatTimestamp = (value: unknown): string => {
   return ''
 }
 
+const timestampToDate = (value: unknown): Date | undefined => {
+  if (!value) return undefined
+  if (typeof value === 'string') return new Date(value)
+  return (value as { toDate?: () => Date }).toDate?.()
+}
+
 function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     try {
@@ -318,6 +321,8 @@ function App() {
   const [newHteSupervisorName, setNewHteSupervisorName] = useState('')
   const [newHteSupervisorEmail, setNewHteSupervisorEmail] = useState('')
   const [newHteSupervisorPhone, setNewHteSupervisorPhone] = useState('')
+  const [newHteExpectedTimeIn, setNewHteExpectedTimeIn] = useState('')
+  const [editingHte, setEditingHte] = useState<HteRecord | null>(null)
   const [addingHte, setAddingHte] = useState(false)
   const [addHteError, setAddHteError] = useState('')
   const [newCoordinatorName, setNewCoordinatorName] = useState('')
@@ -325,19 +330,10 @@ function App() {
   const [newCoordinatorPassword, setNewCoordinatorPassword] = useState('')
   const [addingCoordinator, setAddingCoordinator] = useState(false)
   const [addCoordinatorError, setAddCoordinatorError] = useState('')
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const [avatarError, setAvatarError] = useState('')
 
   useEffect(() => {
-    // Auto-login demo user if present in localStorage (testing/dev only)
-    try {
-      const raw = localStorage.getItem('ojtrack_demo_user')
-      if (raw) {
-        const parsed = JSON.parse(raw) as UserRecord
-        setUser(parsed)
-        setLoading(false)
-        return
-      }
-    } catch {}
-
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid))
@@ -353,7 +349,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!user || user.id === 'demo-coordinator') {
+    if (!user) {
       setDashboardLoading(false)
       return undefined
     }
@@ -554,18 +550,9 @@ function App() {
           100,
       )
     : 0
-  const liveUpdatesActive = !dashboardLoading && user?.id !== 'demo-coordinator'
+  const liveUpdatesActive = !dashboardLoading
 
   const addClass = async (input: { name: string; schoolYear: string; term: string; requiredHours: number }) => {
-    if (user?.id === 'demo-coordinator') {
-      const joinCode = `DEMO${Math.floor(Math.random() * 90 + 10)}`
-      setClasses((current) => [
-        ...current,
-        { id: `class-${Date.now()}`, coordinatorId: user.id, joinCode, ...input },
-      ])
-      return
-    }
-
     const joinCode = await generateUniqueJoinCode()
     await addDoc(collection(db, 'classes'), {
       ...input,
@@ -588,7 +575,7 @@ function App() {
       ])
     }
 
-    if (user && user.id !== 'demo-coordinator') {
+    if (user) {
       try {
         if (decision === 'approved' && classItem) {
           await setDoc(doc(db, 'students', request.studentUid), {
@@ -615,7 +602,7 @@ function App() {
     updates: { name: string; schoolYear: string; term: string; requiredHours: number },
   ) => {
     setClasses((current) => current.map((c) => (c.id === classId ? { ...c, ...updates } : c)))
-    if (user && user.id !== 'demo-coordinator') {
+    if (user) {
       try {
         await updateDoc(doc(db, 'classes', classId), updates)
       } catch (error) {
@@ -631,7 +618,7 @@ function App() {
     setStudents((current) => current.map((s) => (s.classId === classId ? { ...s, classId: '' } : s)))
     setClasses((current) => current.filter((c) => c.id !== classId))
 
-    if (user && user.id !== 'demo-coordinator') {
+    if (user) {
       try {
         await Promise.all(
           affectedStudents.map((s) => updateDoc(doc(db, 'students', s.id), { classId: '' })),
@@ -647,7 +634,7 @@ function App() {
   const updateReportStatus = async (reportId: string, status: 'approved' | 'rejected') => {
     const report = reports.find((r) => r.id === reportId)
     setReports((current) => current.map((r) => (r.id === reportId ? { ...r, status } : r)))
-    if (user && user.id !== 'demo-coordinator') {
+    if (user) {
       try {
         await updateDoc(doc(db, 'reports', reportId), { status })
       } catch (error) {
@@ -660,7 +647,7 @@ function App() {
   const updateDocumentStatus = async (documentId: string, status: 'approved' | 'rejected') => {
     const document = preOjtDocuments.find((d) => d.id === documentId)
     setPreOjtDocuments((current) => current.map((d) => (d.id === documentId ? { ...d, status } : d)))
-    if (user && user.id !== 'demo-coordinator') {
+    if (user) {
       try {
         await updateDoc(doc(db, 'pre_ojt_documents', documentId), { status })
       } catch (error) {
@@ -675,7 +662,7 @@ function App() {
     setStudents((current) =>
       current.map((s) => (s.id === studentId ? { ...s, completionStatus: 'completed', completedAt } : s)),
     )
-    if (user && user.id !== 'demo-coordinator') {
+    if (user) {
       try {
         await updateDoc(doc(db, 'students', studentId), { completionStatus: 'completed', completedAt })
       } catch (error) {
@@ -688,7 +675,7 @@ function App() {
     setStudents((current) =>
       current.map((s) => (s.id === studentId ? { ...s, completionStatus: 'in_progress' } : s)),
     )
-    if (user && user.id !== 'demo-coordinator') {
+    if (user) {
       try {
         await updateDoc(doc(db, 'students', studentId), { completionStatus: 'in_progress' })
       } catch (error) {
@@ -700,7 +687,7 @@ function App() {
   const markAllNotificationsRead = async () => {
     const unread = notifications.filter((n) => !n.read)
     setNotifications((current) => current.map((n) => ({ ...n, read: true })))
-    if (user && user.id !== 'demo-coordinator') {
+    if (user) {
       try {
         await Promise.all(unread.map((n) => updateDoc(doc(db, 'notifications', n.id), { read: true })))
       } catch (error) {
@@ -720,7 +707,7 @@ function App() {
     setNotifications((current) =>
       current.map((n) => (matching.some((m) => m.id === n.id) ? { ...n, read: true } : n)),
     )
-    if (user && user.id !== 'demo-coordinator') {
+    if (user) {
       try {
         await Promise.all(matching.map((n) => updateDoc(doc(db, 'notifications', n.id), { read: true })))
       } catch (error) {
@@ -740,18 +727,11 @@ function App() {
     const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
     const url = `${window.location.origin}${window.location.pathname}?evaluate=${token}`
 
-    if (user?.id === 'demo-coordinator') {
-      setHteEvaluationLinks((current) => [
-        ...current,
-        { id: `link-${Date.now()}`, studentId, token, expiresAt, submitted: false },
-      ])
-    } else {
-      try {
-        await addDoc(collection(db, 'hte_evaluation_links'), { studentId, token, expiresAt, submitted: false })
-      } catch (error) {
-        console.error('Failed to generate evaluation link:', error)
-        return
-      }
+    try {
+      await addDoc(collection(db, 'hte_evaluation_links'), { studentId, token, expiresAt, submitted: false })
+    } catch (error) {
+      console.error('Failed to generate evaluation link:', error)
+      return
     }
     setGeneratedHteLink({ studentId, url })
   }
@@ -759,7 +739,7 @@ function App() {
   const updateAttendanceLogStatus = async (logId: string, status: 'verified' | 'flagged') => {
     const log = attendanceLogs.find((l) => l.id === logId)
     setAttendanceLogs((current) => current.map((log) => (log.id === logId ? { ...log, status } : log)))
-    if (user && user.id !== 'demo-coordinator') {
+    if (user) {
       try {
         await updateDoc(doc(db, 'attendance_logs', logId), { status })
       } catch (error) {
@@ -769,11 +749,56 @@ function App() {
     if (log) await markStudentNotificationsRead(log.studentId, ['attendance', 'attendance_error'])
   }
 
+  /**
+   * Only ever called on a still-pending log (AttendancePhotoModal only offers
+   * this while status === 'pending') — so students/{id}.renderedHours has
+   * nothing to reconcile yet; re-verifying afterward credits hours off the
+   * freshly recomputed computedHours below, same as any normal verification.
+   */
+  const correctAttendanceLogTime = async (log: AttendanceLogRecord, newTimestamp: Date, reason: string) => {
+    const newTs = Timestamp.fromDate(newTimestamp)
+    const updates: Record<string, unknown> = {
+      timestamp: newTs,
+      lastTimeCorrection: {
+        previousTimestamp: log.timestamp,
+        newTimestamp: newTs,
+        reason,
+        correctedBy: user?.id || 'unknown',
+        correctedAt: new Date().toISOString(),
+      },
+    }
+
+    if (log.type === 'time_in') {
+      const student = students.find((s) => s.userId === log.studentId)
+      const hte = student?.assignedHteId ? htes.find((h) => h.id === student.assignedHteId) : undefined
+      updates.late = isLate(newTimestamp, hte?.expectedTimeIn, preferences.lateThresholdMinutes)
+    }
+
+    if (log.pairedWithLogId) {
+      const pairedSnap = await getDoc(doc(db, 'attendance_logs', log.pairedWithLogId))
+      const pairedTimestamp = pairedSnap.data()?.timestamp
+      const pairedDate = timestampToDate(pairedTimestamp)
+      if (pairedDate) {
+        const timeIn = log.type === 'time_in' ? newTimestamp : pairedDate
+        const timeOut = log.type === 'time_out' ? newTimestamp : pairedDate
+        const hours = (timeOut.getTime() - timeIn.getTime()) / (1000 * 60 * 60)
+        const computedHours = hours > 0 && hours <= 16 ? Math.round(hours * 100) / 100 : undefined
+        if (log.type === 'time_out') {
+          updates.computedHours = computedHours ?? deleteField()
+        } else {
+          await updateDoc(doc(db, 'attendance_logs', log.pairedWithLogId), { computedHours: computedHours ?? deleteField() })
+        }
+      }
+    }
+
+    await updateDoc(doc(db, 'attendance_logs', log.id), updates)
+  }
+
   const removeStudentFromClass = async (student: StudentRecord) => {
     setStudents((current) =>
       current.map((s) => (s.id === student.id ? { ...s, classId: '' } : s)),
     )
-    if (user && user.id !== 'demo-coordinator') {
+    if (user) {
       try {
         await updateDoc(doc(db, 'students', student.id), { classId: '' })
       } catch (error) {
@@ -783,20 +808,34 @@ function App() {
   }
 
   const addHte = async (payload: Omit<HteRecord, 'id'>): Promise<string> => {
-    if (user?.id === 'demo-coordinator') {
-      const id = `hte-${Date.now()}`
-      setHtes((current) => [...current, { id, ...payload }])
-      return id
-    }
     const docRef = await addDoc(collection(db, 'htes'), payload)
     return docRef.id
+  }
+
+  const updateHte = async (
+    hteId: string,
+    updates: {
+      name: string
+      address: string
+      supervisorName: string
+      supervisorEmail: string
+      supervisorPhone: string
+      expectedTimeIn?: string
+    },
+  ) => {
+    const { expectedTimeIn, ...rest } = updates
+    await updateDoc(doc(db, 'htes', hteId), {
+      ...rest,
+      expectedTimeIn: expectedTimeIn || deleteField(),
+    })
+    setEditingHte(null)
   }
 
   const assignStudentHte = async (studentId: string, hteId: string) => {
     setStudents((current) =>
       current.map((s) => (s.id === studentId ? { ...s, assignedHteId: hteId } : s)),
     )
-    if (user && user.id !== 'demo-coordinator') {
+    if (user) {
       try {
         await updateDoc(doc(db, 'students', studentId), { assignedHteId: hteId })
       } catch (error) {
@@ -814,15 +853,6 @@ function App() {
     const taken = Object.values(coordinators).some((c) => c.email.toLowerCase() === trimmedEmail)
     if (taken) {
       throw new Error('An account with this email already exists.')
-    }
-
-    if (user?.id === 'demo-coordinator') {
-      const id = `demo-coordinator-${Date.now()}`
-      setCoordinators((current) => ({
-        ...current,
-        [id]: { id, email: trimmedEmail, displayName: trimmedName, role: 'coordinator', createdAt: new Date().toISOString() },
-      }))
-      return
     }
 
     const uid = await createCoordinatorAccount(trimmedEmail, password)
@@ -847,7 +877,7 @@ function App() {
       ),
     )
 
-    if (user && user.id !== 'demo-coordinator') {
+    if (user) {
       try {
         await updateDoc(doc(db, 'students', editingStudent.id), {
           requiredHours: newRequiredHours,
@@ -1330,7 +1360,10 @@ function App() {
                     return (
                       <tr key={student.id}>
                         <td>
-                          <span className="mono">{studentUser?.studentIdCode || studentUser?.email || student.userId}</span>
+                          <span className="member-id-cell">
+                            <Avatar name={name} photoUrl={studentUser?.photoUrl} seed={student.userId} size={22} />
+                            <span className="mono">{studentUser?.studentIdCode || studentUser?.email || student.userId}</span>
+                          </span>
                         </td>
                         <td>
                           <span className="member-name-cell">
@@ -1584,7 +1617,14 @@ function App() {
                         </span>
                       </td>
                       <td className="mono">{dateLabel}</td>
-                      <td className="mono">{timeInLog ? formatClockTime(timeInLog.timestamp) : '—'}</td>
+                      <td className="mono">
+                        {timeInLog ? formatClockTime(timeInLog.timestamp) : '—'}
+                        {timeInLog?.late && (
+                          <span className="status-badge status-flagged late-tag" title="Later than the assigned HTE's expected time-in">
+                            late
+                          </span>
+                        )}
+                      </td>
                       <td className="mono">{timeOutLog ? formatClockTime(timeOutLog.timestamp) : '—'}</td>
                       <td className="mono">{hours === null ? '—' : hours}</td>
                       <td>
@@ -1902,12 +1942,14 @@ function App() {
         supervisorName: newHteSupervisorName.trim(),
         supervisorEmail: newHteSupervisorEmail.trim(),
         supervisorPhone: newHteSupervisorPhone.trim(),
+        ...(newHteExpectedTimeIn ? { expectedTimeIn: newHteExpectedTimeIn } : {}),
       })
       setNewHteName('')
       setNewHteAddress('')
       setNewHteSupervisorName('')
       setNewHteSupervisorEmail('')
       setNewHteSupervisorPhone('')
+      setNewHteExpectedTimeIn('')
     } catch (error) {
       setAddHteError(error instanceof Error ? error.message : 'Could not enroll this HTE. Please try again.')
     } finally {
@@ -1942,11 +1984,22 @@ function App() {
                       <span className="review-meta no-capitalize">{hte.address || 'No address on file'}</span>
                     </div>
                   </div>
+                  <button className="eye-button" title="Edit HTE" onClick={() => setEditingHte(hte)}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path
+                        d="M4 20L4.7 16.6L15.3 6C15.9 5.4 16.9 5.4 17.5 6L18.5 7C19.1 7.6 19.1 8.6 18.5 9.2L7.9 19.8L4 20Z"
+                        stroke="currentColor"
+                        strokeWidth="1.7"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
                 </div>
                 <p className="review-content">
                   {hte.supervisorName}
                   {hte.supervisorEmail ? ` · ${hte.supervisorEmail}` : ''}
                   {hte.supervisorPhone ? ` · ${hte.supervisorPhone}` : ''}
+                  {hte.expectedTimeIn ? ` · Time-in ${hte.expectedTimeIn}` : ''}
                 </p>
               </div>
             )
@@ -1990,6 +2043,14 @@ function App() {
               placeholder="09XX-XXX-XXXX"
             />
           </label>
+          <label>
+            Expected time-in (optional)
+            <input type="time" value={newHteExpectedTimeIn} onChange={(e) => setNewHteExpectedTimeIn(e.target.value)} />
+          </label>
+          <p className="modal-hint">
+            Every student assigned to this HTE inherits this start time for lateness tracking — set once here rather
+            than per student.
+          </p>
           {addHteError && <p className="error-text">{addHteError}</p>}
           <button type="submit" className="primary-button" disabled={addingHte}>
             {addingHte ? 'Enrolling…' : 'Enroll HTE'}
@@ -2020,10 +2081,31 @@ function App() {
     setPreferencesSaved(false)
   }
 
+  const handleAvatarChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !user) return
+
+    setAvatarError('')
+    setUploadingAvatar(true)
+    try {
+      // Displayed at 52px at most — no reason to ship a multi-megapixel file.
+      const resized = await resizeImageFile(file, 512)
+      const photoUrl = await uploadAvatar(user.id, resized)
+      await updateDoc(doc(db, 'users', user.id), { photoUrl })
+      setUser((current) => (current ? { ...current, photoUrl } : current))
+    } catch (error) {
+      console.error('Failed to upload avatar:', error)
+      setAvatarError('Could not upload that photo. Please try again.')
+    } finally {
+      setUploadingAvatar(false)
+    }
+  }
+
   const handleSavePreferences = async () => {
     setSavingPreferences(true)
     try {
-      if (user && user.id !== 'demo-coordinator') {
+      if (user) {
         await setDoc(doc(db, 'settings', 'global'), preferences, { merge: true })
       }
       setPreferencesSaved(true)
@@ -2086,10 +2168,20 @@ function App() {
                 onChange={(e) => updatePreferencesField('absenceAlertThresholdDays', Math.max(1, Number(e.target.value) || 1))}
               />
             </label>
+            <label className="preferences-row">
+              <span className="preferences-label">Late Grace Period (minutes)</span>
+              <input
+                type="number"
+                min={0}
+                value={preferences.lateThresholdMinutes}
+                onChange={(e) => updatePreferencesField('lateThresholdMinutes', Math.max(0, Number(e.target.value) || 0))}
+              />
+            </label>
           </div>
           <p className="modal-hint">
-            These defaults are used when creating a new class, and the absence alert threshold controls how many
-            consecutive no-time-in days trigger a coordinator notification.
+            These defaults are used when creating a new class. The absence alert threshold controls how many
+            consecutive no-time-in days trigger a coordinator notification, and the late grace period is how many
+            minutes past an HTE's expected time-in (set per HTE under Enroll HTE) before a time-in is marked late.
           </p>
           <button className="primary-button" onClick={handleSavePreferences} disabled={savingPreferences}>
             {savingPreferences ? 'Saving…' : 'Save Changes'}
@@ -2147,14 +2239,18 @@ function App() {
         <div className="module-card">
           <h3>Profile & settings</h3>
           <p>Your coordinator profile.</p>
-          <div className="profile-row">
-            <strong>Name:</strong>
-            <span>{user.displayName}</span>
+          <div className="profile-identity">
+            <Avatar name={user.displayName} photoUrl={user.photoUrl} seed={user.id} size={52} />
+            <div>
+              <strong className="profile-name">{user.displayName}</strong>
+              <span className="profile-id">{user.email}</span>
+            </div>
           </div>
-          <div className="profile-row">
-            <strong>Email:</strong>
-            <span>{user.email}</span>
-          </div>
+          <label className="secondary-button avatar-upload-button">
+            {uploadingAvatar ? 'Uploading…' : 'Change photo'}
+            <input type="file" accept="image/*" onChange={handleAvatarChange} disabled={uploadingAvatar} hidden />
+          </label>
+          {avatarError && <p className="error-text">{avatarError}</p>}
         </div>
       </div>
     )
@@ -2166,7 +2262,6 @@ function App() {
     } catch (error) {
       console.error('Logout failed:', error)
     }
-    localStorage.removeItem('ojtrack_demo_user')
     setUser(null)
   }
 
@@ -2350,6 +2445,7 @@ function App() {
               onClose={() => setViewingAttendanceDay(null)}
               onVerify={(logId) => updateAttendanceLogStatus(logId, 'verified')}
               onFlag={(logId) => updateAttendanceLogStatus(logId, 'flagged')}
+              onCorrectTime={correctAttendanceLogTime}
             />
           )
         })()}
@@ -2361,6 +2457,13 @@ function App() {
           onClose={() => setEditingClass(null)}
           onSave={(updates) => updateClass(editingClass.id, updates)}
           onDelete={() => deleteClass(editingClass.id)}
+        />
+      )}
+      {editingHte && (
+        <EditHteModal
+          hte={editingHte}
+          onClose={() => setEditingHte(null)}
+          onSave={(updates) => updateHte(editingHte.id, updates)}
         />
       )}
     </div>

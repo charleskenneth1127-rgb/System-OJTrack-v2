@@ -1,6 +1,6 @@
 import React from 'react'
 import type { AttendanceLogRecord, HteRecord, StudentRecord, UserRecord } from '../types'
-import { avatarColor, initials } from '../utils/avatarStyle'
+import Avatar from './Avatar'
 
 interface StudentProfileModalProps {
   student: StudentRecord
@@ -46,7 +46,6 @@ const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   const pct = student.requiredHours > 0 ? Math.round((student.renderedHours / student.requiredHours) * 100) : 0
   const clampedPct = Math.min(100, pct)
   const tier = tierFor(pct)
-  const avatar = avatarColor(student.userId)
   const dashOffset = RING_CIRCUMFERENCE * (1 - clampedPct / 100)
 
   const recentLogs = [...attendanceLogs]
@@ -69,9 +68,7 @@ const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
 
         <div className="modal-body">
           <div className="profile-identity">
-            <span className="profile-avatar" style={{ background: avatar.bg, color: avatar.fg }}>
-              {initials(name)}
-            </span>
+            <Avatar name={name} photoUrl={studentUser?.photoUrl} seed={student.userId} size={52} />
             <div>
               <strong className="profile-name">{name}</strong>
               <span className="mono profile-id">{studentUser?.studentIdCode || studentUser?.email || student.userId}</span>

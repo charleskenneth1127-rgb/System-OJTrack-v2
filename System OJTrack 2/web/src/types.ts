@@ -10,6 +10,7 @@ export interface UserRecord {
   mustChangePassword?: boolean
   contactEmail?: string
   fcmToken?: string | null
+  photoUrl?: string
 }
 
 export interface ClassRecord {
@@ -55,6 +56,8 @@ export interface HteRecord {
   supervisorName: string
   supervisorEmail: string
   supervisorPhone: string
+  /** "HH:mm" 24h local time — every student assigned here inherits it for lateness checks. */
+  expectedTimeIn?: string
 }
 
 export interface AttendanceLogRecord {
@@ -66,6 +69,17 @@ export interface AttendanceLogRecord {
   status: 'pending' | 'verified' | 'flagged'
   /** Set by onAttendanceLogCreated once paired with a time_in — only credited to renderedHours on verify. */
   computedHours?: number
+  paired?: boolean
+  pairedWithLogId?: string
+  /** time_in only — actual time vs. the assigned HTE's expectedTimeIn + the grace period in settings/global. */
+  late?: boolean
+  lastTimeCorrection?: {
+    previousTimestamp: any
+    newTimestamp: any
+    reason: string
+    correctedBy: string
+    correctedAt: string
+  }
 }
 
 export interface PreOjtDocumentRecord {
@@ -121,6 +135,8 @@ export interface SystemPreferencesRecord {
   semester: string
   /** Consecutive no-time-in days before dailyAbsenceCheck notifies the coordinator. */
   absenceAlertThresholdDays: number
+  /** Grace period after an HTE's expectedTimeIn before a time-in log is marked late. */
+  lateThresholdMinutes: number
 }
 
 export interface NotificationRecord {
