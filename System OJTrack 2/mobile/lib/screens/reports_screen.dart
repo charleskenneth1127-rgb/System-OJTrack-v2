@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme/ndmu_theme.dart';
 import '../utils/submission_helpers.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/stream_error.dart';
 
 const _reportTypes = ['daily', 'weekly', 'narrative'];
 
@@ -62,6 +63,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       builder: (context, snapshot) {
                         if (snapshot.connectionState == ConnectionState.waiting) {
                           return const Center(child: CircularProgressIndicator());
+                        }
+                        if (snapshot.hasError) {
+                          return Center(child: StreamError(error: snapshot.error));
                         }
                         final docs = [...snapshot.data?.docs ?? []];
                         docs.sort((a, b) {

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../theme/ndmu_theme.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/stream_error.dart';
 
 /// Chat-style view over the coordinator's feedback messages.
 ///
@@ -58,6 +59,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: StreamError(error: snapshot.error));
                 }
                 final docs = [...snapshot.data?.docs ?? []];
                 docs.sort((a, b) {

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/class_join_request.dart';
 import '../theme/ndmu_theme.dart';
+import '../widgets/stream_error.dart';
 
 /// Shown once a student is signed in but not yet on any class roster
 /// (mirrors CodeChum's "enter the class code given to you by your teacher"
@@ -109,6 +110,9 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
                   : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                       stream: FirebaseFirestore.instance.collection('class_join_requests').doc(uid).snapshots(),
                       builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return StreamError(error: snapshot.error);
+                        }
                         final data = snapshot.data?.data();
                         if (data != null && data['status'] == 'pending') {
                           return _PendingCard(

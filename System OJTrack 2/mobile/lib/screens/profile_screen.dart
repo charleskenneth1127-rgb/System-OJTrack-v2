@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../theme/ndmu_theme.dart';
 import '../utils/submission_helpers.dart';
 import '../widgets/photo_viewer_screen.dart';
+import '../widgets/stream_error.dart';
 import 'change_password_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -91,6 +92,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: StreamError(error: snapshot.error));
                 }
                 final data = snapshot.data?.data() ?? {};
                 final displayName = (data['displayName'] as String?) ?? 'Intern';

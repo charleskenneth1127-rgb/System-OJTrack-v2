@@ -338,6 +338,10 @@ function App() {
   const [notifications, setNotifications] = useState<NotificationRecord[]>(initialNotifications)
   const [activityLogs, setActivityLogs] = useState<ActivityLogRecord[]>([])
   const [dashboardLoading, setDashboardLoading] = useState(true)
+  // Set the moment any live listener below errors (most commonly a rules
+  // problem) — without this, a failed listener just silently stops updating
+  // and every screen reading it looks like "no data" instead of "broken".
+  const [syncError, setSyncError] = useState<string | null>(null)
   const [editingStudent, setEditingStudent] = useState<StudentRecord | null>(null)
   const [openClassId, setOpenClassId] = useState<string | null>(null)
   const [classTab, setClassTab] = useState<ClassTab>('members')
@@ -391,27 +395,48 @@ function App() {
 
     registerPushNotifications(user.id)
 
-    const classesUnsubscribe = onSnapshot(collection(db, 'classes'), (snapshot) => {
-      const loadedClasses = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as Omit<ClassRecord, 'id'>),
-      }))
-      setClasses(loadedClasses)
-    })
+    // A listener that errors (most often a rules/permission problem) just
+    // stops emitting — without a visible signal, every screen reading its
+    // state quietly looks like "no data" instead of "this is broken", which
+    // is exactly the failure mode that made past rules bugs hard to spot.
+    const onSyncError = (source: string) => (error: Error) => {
+      console.error(`Failed to sync ${source}:`, error)
+      setSyncError(`Live updates for "${source}" stopped working — ${error.message}. Try refreshing the page.`)
+    }
 
-    const preferencesUnsubscribe = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
-      if (snap.exists()) {
-        setPreferences({ ...DEFAULT_PREFERENCES, ...(snap.data() as Partial<SystemPreferencesRecord>) })
-      }
-    })
+    const classesUnsubscribe = onSnapshot(
+      collection(db, 'classes'),
+      (snapshot) => {
+        const loadedClasses = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as Omit<ClassRecord, 'id'>),
+        }))
+        setClasses(loadedClasses)
+      },
+      onSyncError('classes'),
+    )
 
-    const studentsUnsubscribe = onSnapshot(collection(db, 'students'), (snapshot) => {
-      const loadedStudents = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as Omit<StudentRecord, 'id'>),
-      }))
-      setStudents(loadedStudents)
-    })
+    const preferencesUnsubscribe = onSnapshot(
+      doc(db, 'settings', 'global'),
+      (snap) => {
+        if (snap.exists()) {
+          setPreferences({ ...DEFAULT_PREFERENCES, ...(snap.data() as Partial<SystemPreferencesRecord>) })
+        }
+      },
+      onSyncError('settings'),
+    )
+
+    const studentsUnsubscribe = onSnapshot(
+      collection(db, 'students'),
+      (snapshot) => {
+        const loadedStudents = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as Omit<StudentRecord, 'id'>),
+        }))
+        setStudents(loadedStudents)
+      },
+      onSyncError('students'),
+    )
 
     const classJoinRequestsUnsubscribe = onSnapshot(
       query(collection(db, 'class_join_requests'), where('status', '==', 'pending')),
@@ -422,15 +447,20 @@ function App() {
         }))
         setClassJoinRequests(loadedRequests)
       },
+      onSyncError('join requests'),
     )
 
-    const htesUnsubscribe = onSnapshot(collection(db, 'htes'), (snapshot) => {
-      const loadedHtes = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<HteRecord, 'id'>),
-      }))
-      setHtes(loadedHtes)
-    })
+    const htesUnsubscribe = onSnapshot(
+      collection(db, 'htes'),
+      (snapshot) => {
+        const loadedHtes = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<HteRecord, 'id'>),
+        }))
+        setHtes(loadedHtes)
+      },
+      onSyncError('HTEs'),
+    )
 
     const usersUnsubscribe = onSnapshot(
       query(collection(db, 'users'), where('role', '==', 'student')),
@@ -441,6 +471,7 @@ function App() {
         })
         setUsers(loadedUsers)
       },
+      onSyncError('students'),
     )
 
     const coordinatorsUnsubscribe = onSnapshot(
@@ -452,47 +483,68 @@ function App() {
         })
         setCoordinators(loadedCoordinators)
       },
+      onSyncError('coordinators'),
     )
 
-    const reportsUnsubscribe = onSnapshot(collection(db, 'reports'), (snapshot) => {
-      const loadedReports = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<ReportRecord, 'id'>),
-      }))
-      setReports(loadedReports)
-    })
+    const reportsUnsubscribe = onSnapshot(
+      collection(db, 'reports'),
+      (snapshot) => {
+        const loadedReports = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<ReportRecord, 'id'>),
+        }))
+        setReports(loadedReports)
+      },
+      onSyncError('reports'),
+    )
 
-    const documentsUnsubscribe = onSnapshot(collection(db, 'pre_ojt_documents'), (snapshot) => {
-      const loadedDocuments = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<PreOjtDocumentRecord, 'id'>),
-      }))
-      setPreOjtDocuments(loadedDocuments)
-    })
+    const documentsUnsubscribe = onSnapshot(
+      collection(db, 'pre_ojt_documents'),
+      (snapshot) => {
+        const loadedDocuments = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<PreOjtDocumentRecord, 'id'>),
+        }))
+        setPreOjtDocuments(loadedDocuments)
+      },
+      onSyncError('documents'),
+    )
 
-    const attendanceUnsubscribe = onSnapshot(collection(db, 'attendance_logs'), (snapshot) => {
-      const loadedLogs = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<AttendanceLogRecord, 'id'>),
-      }))
-      setAttendanceLogs(loadedLogs)
-    })
+    const attendanceUnsubscribe = onSnapshot(
+      collection(db, 'attendance_logs'),
+      (snapshot) => {
+        const loadedLogs = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<AttendanceLogRecord, 'id'>),
+        }))
+        setAttendanceLogs(loadedLogs)
+      },
+      onSyncError('attendance'),
+    )
 
-    const hteLinksUnsubscribe = onSnapshot(collection(db, 'hte_evaluation_links'), (snapshot) => {
-      const loadedLinks = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<HteEvaluationLinkRecord, 'id'>),
-      }))
-      setHteEvaluationLinks(loadedLinks)
-    })
+    const hteLinksUnsubscribe = onSnapshot(
+      collection(db, 'hte_evaluation_links'),
+      (snapshot) => {
+        const loadedLinks = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<HteEvaluationLinkRecord, 'id'>),
+        }))
+        setHteEvaluationLinks(loadedLinks)
+      },
+      onSyncError('HTE evaluation links'),
+    )
 
-    const hteEvaluationsUnsubscribe = onSnapshot(collection(db, 'hte_evaluations'), (snapshot) => {
-      const loadedEvaluations = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...(docSnap.data() as Omit<HteEvaluationRecord, 'id'>),
-      }))
-      setHteEvaluations(loadedEvaluations)
-    })
+    const hteEvaluationsUnsubscribe = onSnapshot(
+      collection(db, 'hte_evaluations'),
+      (snapshot) => {
+        const loadedEvaluations = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<HteEvaluationRecord, 'id'>),
+        }))
+        setHteEvaluations(loadedEvaluations)
+      },
+      onSyncError('HTE evaluations'),
+    )
 
     const notificationsUnsubscribe = onSnapshot(
       query(collection(db, 'notifications'), where('recipientId', '==', user.id)),
@@ -503,6 +555,7 @@ function App() {
         }))
         setNotifications(loadedNotifications)
       },
+      onSyncError('notifications'),
     )
 
     const activityLogUnsubscribe = onSnapshot(
@@ -514,6 +567,7 @@ function App() {
         }))
         setActivityLogs(loadedActivityLogs)
       },
+      onSyncError('activity log'),
     )
 
     setDashboardLoading(false)
@@ -2522,6 +2576,14 @@ function App() {
 
   return (
     <div className="app-shell">
+      {syncError && (
+        <div className="sync-error-banner" role="alert">
+          <span>⚠ {syncError}</span>
+          <button onClick={() => setSyncError(null)} aria-label="Dismiss">
+            ✕
+          </button>
+        </div>
+      )}
       <aside className="sidebar">
         <div className="sidebar-header">
           <div className="sidebar-brand">

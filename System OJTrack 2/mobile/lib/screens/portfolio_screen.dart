@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme/ndmu_theme.dart';
 import '../utils/submission_helpers.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/stream_error.dart';
 
 class PortfolioScreen extends StatefulWidget {
   const PortfolioScreen({super.key});
@@ -110,6 +111,9 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                       builder: (context, snapshot) {
                         if (snapshot.connectionState == ConnectionState.waiting) {
                           return const Center(child: CircularProgressIndicator());
+                        }
+                        if (snapshot.hasError) {
+                          return Center(child: StreamError(error: snapshot.error));
                         }
                         final docs = [...snapshot.data?.docs ?? []];
                         docs.sort((a, b) {

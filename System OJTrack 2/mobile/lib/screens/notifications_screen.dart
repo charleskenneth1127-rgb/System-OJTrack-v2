@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../theme/ndmu_theme.dart';
 import '../utils/notification_helpers.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/stream_error.dart';
 import 'attendance_screen.dart';
 import 'documents_screen.dart';
 import 'messages_screen.dart';
@@ -64,6 +65,9 @@ class NotificationsScreen extends StatelessWidget {
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(child: StreamError(error: snapshot.error));
                 }
                 final docs = [...snapshot.data?.docs ?? []];
                 docs.sort((a, b) {

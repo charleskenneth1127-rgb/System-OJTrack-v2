@@ -560,6 +560,38 @@ nav {
   letter-spacing: 0.05em;
 }
 
+.sync-error-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 18px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.sync-error-banner button {
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.sync-error-banner button:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
 .topbar h2 {
   font-size: 1.3rem;
   margin-bottom: 3px;

@@ -217,6 +217,12 @@ class _AuthGateState extends State<AuthGate> {
                   body: Center(child: CircularProgressIndicator()),
                 );
               }
+              if (userDocSnapshot.hasError) {
+                return _AuthStreamErrorScaffold(
+                  error: userDocSnapshot.error,
+                  onRetry: () => setState(() {}),
+                );
+              }
               final data = userDocSnapshot.data?.data();
               final mustChangePassword = data?['mustChangePassword'] == true;
               if (mustChangePassword) {
@@ -232,6 +238,17 @@ class _AuthGateState extends State<AuthGate> {
                       ConnectionState.waiting) {
                     return const Scaffold(
                       body: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  if (studentDocSnapshot.hasError) {
+                    // Distinct from "not a class member yet" below — an
+                    // actual read error here must never be treated as
+                    // "student has no record", or an already-approved
+                    // student would get bounced back to JoinClassScreen on
+                    // a transient network blip.
+                    return _AuthStreamErrorScaffold(
+                      error: studentDocSnapshot.error,
+                      onRetry: () => setState(() {}),
                     );
                   }
                   if (studentDocSnapshot.data?.exists != true) {
@@ -259,6 +276,49 @@ class _AuthGateState extends State<AuthGate> {
           onCreateAccount: () => setState(() => _showSignUp = true),
         );
       },
+    );
+  }
+}
+
+/// Shown when either of AuthGate's account-status listeners (users/{uid},
+/// students/{uid}) errors — most likely a rules/permission problem or a
+/// dropped connection. Deliberately its own full Scaffold, not folded into
+/// StudentHomePage's tab content, since this can happen before there's
+/// enough account data to safely render anything else.
+class _AuthStreamErrorScaffold extends StatelessWidget {
+  final Object? error;
+  final VoidCallback onRetry;
+
+  const _AuthStreamErrorScaffold({required this.error, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.redAccent, size: 40),
+              const SizedBox(height: 16),
+              const Text(
+                "Couldn't load your account",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Check your connection and try again.\n$error',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 12.5),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(onPressed: onRetry, child: const Text('Retry')),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
