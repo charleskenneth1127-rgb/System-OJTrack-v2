@@ -24,3 +24,7 @@ replay_pid*.log
 
 # Gradle build output that lands outside the redirected buildDir
 mobile/android/build/
+
+# Local Firebase Emulator Suite data snapshot (see shared/firebase-setup.md) —
+# this is your own local test data, not something to share via the repo.
+emulator-data/

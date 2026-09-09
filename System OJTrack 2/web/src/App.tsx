@@ -31,6 +31,7 @@ import type {
   HteEvaluationRecord,
   HteRecord,
   SystemPreferencesRecord,
+  ActivityLogRecord,
 } from './types'
 import { auth, createCoordinatorAccount, db, generateUniqueJoinCode, studentIdToEmail, uploadAvatar } from './firebase'
 import { resizeImageFile } from './utils/imageResize'
@@ -39,7 +40,22 @@ import { registerPushNotifications } from './push'
 import { avatarColor, classCardStyle, initials } from './utils/avatarStyle'
 import { TERM_OPTIONS } from './constants'
 import { onAuthStateChanged } from 'firebase/auth'
-import { addDoc, collection, deleteDoc, deleteField, doc, getDoc, onSnapshot, query, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore'
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  deleteField,
+  doc,
+  getDoc,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  Timestamp,
+  updateDoc,
+  where,
+} from 'firebase/firestore'
 
 const modules = [
   'Dashboard',
@@ -48,6 +64,7 @@ const modules = [
   'HTE Evaluation Results',
   'Final Assessment & Completion',
   'SIPP/CHED Report Generation',
+  'Activity Log',
   'Settings/Profile',
 ]
 
@@ -97,6 +114,12 @@ const moduleIcons: Record<string, React.ReactNode> = {
       <path d="M6 3.5H14L18.5 8V20.5H6V3.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
       <path d="M14 3.5V8H18.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
       <path d="M12 12V17M12 17L9.5 14.5M12 17L14.5 14.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  'Activity Log': (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 7.5V12L15 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
   'Settings/Profile': (
@@ -307,6 +330,7 @@ function App() {
   const [savingPreferences, setSavingPreferences] = useState(false)
   const [preferencesSaved, setPreferencesSaved] = useState(false)
   const [notifications, setNotifications] = useState<NotificationRecord[]>(initialNotifications)
+  const [activityLogs, setActivityLogs] = useState<ActivityLogRecord[]>([])
   const [dashboardLoading, setDashboardLoading] = useState(true)
   const [editingStudent, setEditingStudent] = useState<StudentRecord | null>(null)
   const [openClassId, setOpenClassId] = useState<string | null>(null)
@@ -332,6 +356,10 @@ function App() {
   const [addCoordinatorError, setAddCoordinatorError] = useState('')
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [avatarError, setAvatarError] = useState('')
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  const [savingName, setSavingName] = useState(false)
+  const [nameError, setNameError] = useState('')
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -470,6 +498,17 @@ function App() {
       },
     )
 
+    const activityLogUnsubscribe = onSnapshot(
+      query(collection(db, 'activity_logs'), orderBy('createdAt', 'desc'), limit(200)),
+      (snapshot) => {
+        const loadedActivityLogs = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<ActivityLogRecord, 'id'>),
+        }))
+        setActivityLogs(loadedActivityLogs)
+      },
+    )
+
     setDashboardLoading(false)
     return () => {
       classesUnsubscribe()
@@ -485,6 +524,7 @@ function App() {
       hteLinksUnsubscribe()
       hteEvaluationsUnsubscribe()
       notificationsUnsubscribe()
+      activityLogUnsubscribe()
     }
   }, [user])
 
@@ -552,6 +592,39 @@ function App() {
     : 0
   const liveUpdatesActive = !dashboardLoading
 
+  /**
+   * Writes one immutable entry to the Activity Log (System Administration).
+   * Fire-and-forget — a logging failure shouldn't block the action it's
+   * describing, so errors are swallowed rather than surfaced to the coordinator.
+   */
+  const logActivity = (action: string, details: string) => {
+    if (!user) return
+    addDoc(collection(db, 'activity_logs'), {
+      actorId: user.id,
+      actorName: user.displayName,
+      action,
+      details,
+      createdAt: new Date().toISOString(),
+    }).catch((error) => console.error('Failed to write activity log:', error))
+  }
+
+  /** A free-text note from the coordinator, distinct from the automated absence/status notifications. */
+  const sendFeedbackToStudent = async (studentId: string, message: string) => {
+    const trimmed = message.trim()
+    if (!user || !trimmed) return
+    const context = classes.find((c) => c.id === students.find((s) => s.userId === studentId)?.classId)
+    await addDoc(collection(db, 'notifications'), {
+      recipientId: studentId,
+      type: 'coordinator_feedback',
+      message: trimmed,
+      read: false,
+      createdAt: new Date().toISOString(),
+      ...(context ? { classId: context.id } : {}),
+      studentId,
+    })
+    logActivity('feedback_sent', `Sent feedback to ${users[studentId]?.displayName || studentId}: "${trimmed}"`)
+  }
+
   const addClass = async (input: { name: string; schoolYear: string; term: string; requiredHours: number }) => {
     const joinCode = await generateUniqueJoinCode()
     await addDoc(collection(db, 'classes'), {
@@ -559,6 +632,7 @@ function App() {
       coordinatorId: user?.id || 'unknown',
       joinCode,
     })
+    logActivity('class_created', `Created class "${input.name}" (${input.schoolYear}, ${input.term}).`)
   }
 
   const respondToJoinRequest = async (
@@ -590,6 +664,10 @@ function App() {
           respondedAt: new Date().toISOString(),
           respondedBy: user.id,
         })
+        logActivity(
+          `join_request_${decision}`,
+          `${decision === 'approved' ? 'Approved' : 'Rejected'} ${request.studentName}'s request to join ${classItem?.name || 'a class'}.`,
+        )
       } catch (error) {
         console.error('Failed to respond to join request:', error)
       }
@@ -605,6 +683,7 @@ function App() {
     if (user) {
       try {
         await updateDoc(doc(db, 'classes', classId), updates)
+        logActivity('class_updated', `Updated class "${updates.name}".`)
       } catch (error) {
         console.error('Failed to update class:', error)
       }
@@ -614,6 +693,7 @@ function App() {
 
   const deleteClass = async (classId: string) => {
     const affectedStudents = students.filter((s) => s.classId === classId)
+    const className = classes.find((c) => c.id === classId)?.name || classId
 
     setStudents((current) => current.map((s) => (s.classId === classId ? { ...s, classId: '' } : s)))
     setClasses((current) => current.filter((c) => c.id !== classId))
@@ -624,6 +704,7 @@ function App() {
           affectedStudents.map((s) => updateDoc(doc(db, 'students', s.id), { classId: '' })),
         )
         await deleteDoc(doc(db, 'classes', classId))
+        logActivity('class_deleted', `Deleted class "${className}" (${affectedStudents.length} student(s) unassigned).`)
       } catch (error) {
         console.error('Failed to delete class:', error)
       }
@@ -637,6 +718,8 @@ function App() {
     if (user) {
       try {
         await updateDoc(doc(db, 'reports', reportId), { status })
+        const name = report ? users[report.studentId]?.displayName || report.studentId : reportId
+        logActivity(`report_${status}`, `${status === 'approved' ? 'Approved' : 'Rejected'} ${name}'s ${report?.type || ''} report.`)
       } catch (error) {
         console.error('Failed to update report status:', error)
       }
@@ -650,6 +733,11 @@ function App() {
     if (user) {
       try {
         await updateDoc(doc(db, 'pre_ojt_documents', documentId), { status })
+        const name = document ? users[document.studentId]?.displayName || document.studentId : documentId
+        logActivity(
+          `document_${status}`,
+          `${status === 'approved' ? 'Approved' : 'Rejected'} ${name}'s ${document?.docType || ''} document.`,
+        )
       } catch (error) {
         console.error('Failed to update document status:', error)
       }
@@ -665,6 +753,7 @@ function App() {
     if (user) {
       try {
         await updateDoc(doc(db, 'students', studentId), { completionStatus: 'completed', completedAt })
+        logActivity('student_completed', `Marked ${users[studentId]?.displayName || studentId}'s internship as complete.`)
       } catch (error) {
         console.error('Failed to mark student completed:', error)
       }
@@ -678,6 +767,7 @@ function App() {
     if (user) {
       try {
         await updateDoc(doc(db, 'students', studentId), { completionStatus: 'in_progress' })
+        logActivity('student_reopened', `Reopened ${users[studentId]?.displayName || studentId}'s internship.`)
       } catch (error) {
         console.error('Failed to reopen internship:', error)
       }
@@ -742,6 +832,8 @@ function App() {
     if (user) {
       try {
         await updateDoc(doc(db, 'attendance_logs', logId), { status })
+        const name = log ? users[log.studentId]?.displayName || log.studentId : logId
+        logActivity(`attendance_${status}`, `${status === 'verified' ? 'Verified' : 'Flagged'} ${name}'s ${log?.type || ''} log.`)
       } catch (error) {
         console.error('Failed to update attendance log status:', error)
       }
@@ -792,6 +884,10 @@ function App() {
     }
 
     await updateDoc(doc(db, 'attendance_logs', log.id), updates)
+    logActivity(
+      'attendance_time_corrected',
+      `Corrected ${users[log.studentId]?.displayName || log.studentId}'s ${log.type} log to ${newTimestamp.toLocaleString()}. Reason: ${reason}`,
+    )
   }
 
   const removeStudentFromClass = async (student: StudentRecord) => {
@@ -801,6 +897,7 @@ function App() {
     if (user) {
       try {
         await updateDoc(doc(db, 'students', student.id), { classId: '' })
+        logActivity('student_removed', `Removed ${users[student.userId]?.displayName || student.userId} from their class.`)
       } catch (error) {
         console.error('Failed to remove student from class:', error)
       }
@@ -809,6 +906,7 @@ function App() {
 
   const addHte = async (payload: Omit<HteRecord, 'id'>): Promise<string> => {
     const docRef = await addDoc(collection(db, 'htes'), payload)
+    logActivity('hte_enrolled', `Enrolled HTE "${payload.name}".`)
     return docRef.id
   }
 
@@ -828,6 +926,7 @@ function App() {
       ...rest,
       expectedTimeIn: expectedTimeIn || deleteField(),
     })
+    logActivity('hte_updated', `Updated HTE "${updates.name}".`)
     setEditingHte(null)
   }
 
@@ -838,6 +937,10 @@ function App() {
     if (user) {
       try {
         await updateDoc(doc(db, 'students', studentId), { assignedHteId: hteId })
+        logActivity(
+          'hte_assigned',
+          `Assigned ${users[studentId]?.displayName || studentId} to ${htes.find((h) => h.id === hteId)?.name || hteId}.`,
+        )
       } catch (error) {
         console.error('Failed to assign HTE:', error)
       }
@@ -862,6 +965,7 @@ function App() {
       role: 'coordinator',
       createdAt: new Date().toISOString(),
     })
+    logActivity('coordinator_created', `Created coordinator account for ${trimmedName} (${trimmedEmail}).`)
   }
 
 
@@ -892,6 +996,10 @@ function App() {
             correctedAt: new Date().toISOString(),
           },
         })
+        logActivity(
+          'hours_corrected',
+          `Corrected ${users[editingStudent.userId]?.displayName || editingStudent.userId}'s hours to ${newRenderedHours}/${newRequiredHours}. Reason: ${reason}`,
+        )
       } catch (error) {
         console.error('Failed to save hours correction:', error)
       }
@@ -1927,6 +2035,30 @@ function App() {
     </div>
   )
 
+  const renderActivityLog = () => (
+    <div className="module-card">
+      <h3>Activity Log</h3>
+      <p>An audit trail of coordinator actions — approvals, corrections, enrollments, and settings changes.</p>
+      {activityLogs.length === 0 ? (
+        <EmptyState title="No activity yet" subtitle="Actions you take across OJTrack will show up here." />
+      ) : (
+        <div className="review-list">
+          {activityLogs.map((entry) => (
+            <div className="review-item" key={entry.id}>
+              <div className="review-item-header">
+                <div>
+                  <strong>{entry.actorName}</strong>
+                  <span className="review-meta no-capitalize">{formatTimestamp(entry.createdAt)}</span>
+                </div>
+              </div>
+              <p className="review-content">{entry.details}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
   const handleAddHte = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!newHteName.trim() || !newHteSupervisorName.trim()) {
@@ -2102,11 +2234,33 @@ function App() {
     }
   }
 
+  const handleSaveName = async () => {
+    const trimmed = nameDraft.trim()
+    if (!user || !trimmed) {
+      setNameError('Enter a name.')
+      return
+    }
+    setNameError('')
+    setSavingName(true)
+    try {
+      await updateDoc(doc(db, 'users', user.id), { displayName: trimmed })
+      setUser((current) => (current ? { ...current, displayName: trimmed } : current))
+      logActivity('profile_updated', `Updated own display name to "${trimmed}".`)
+      setEditingName(false)
+    } catch (error) {
+      console.error('Failed to update display name:', error)
+      setNameError('Could not save your name. Please try again.')
+    } finally {
+      setSavingName(false)
+    }
+  }
+
   const handleSavePreferences = async () => {
     setSavingPreferences(true)
     try {
       if (user) {
         await setDoc(doc(db, 'settings', 'global'), preferences, { merge: true })
+        logActivity('settings_updated', 'Updated system preferences.')
       }
       setPreferencesSaved(true)
     } catch (error) {
@@ -2242,15 +2396,51 @@ function App() {
           <div className="profile-identity">
             <Avatar name={user.displayName} photoUrl={user.photoUrl} seed={user.id} size={52} />
             <div>
-              <strong className="profile-name">{user.displayName}</strong>
+              {editingName ? (
+                <div className="profile-name-edit">
+                  <input
+                    className="profile-name-input"
+                    value={nameDraft}
+                    onChange={(e) => setNameDraft(e.target.value)}
+                    placeholder="Full name"
+                    autoFocus
+                  />
+                  <button className="primary-button" onClick={handleSaveName} disabled={savingName}>
+                    {savingName ? 'Saving…' : 'Save'}
+                  </button>
+                  <button className="secondary-button" onClick={() => { setEditingName(false); setNameError('') }} disabled={savingName}>
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <strong className="profile-name">
+                  {user.displayName}{' '}
+                  <button
+                    className="profile-name-edit-trigger"
+                    title="Edit name"
+                    onClick={() => {
+                      setNameDraft(user.displayName)
+                      setNameError('')
+                      setEditingName(true)
+                    }}
+                  >
+                    ✎
+                  </button>
+                </strong>
+              )}
               <span className="profile-id">{user.email}</span>
             </div>
           </div>
+          {nameError && <p className="error-text">{nameError}</p>}
           <label className="secondary-button avatar-upload-button">
             {uploadingAvatar ? 'Uploading…' : 'Change photo'}
             <input type="file" accept="image/*" onChange={handleAvatarChange} disabled={uploadingAvatar} hidden />
           </label>
           {avatarError && <p className="error-text">{avatarError}</p>}
+          <p className="modal-hint">
+            Your sign-in email can't be changed here — contact another coordinator with access to update it via
+            Firebase if it's ever wrong.
+          </p>
         </div>
       </div>
     )
@@ -2279,6 +2469,8 @@ function App() {
         return renderFinalAssessment()
       case 'SIPP/CHED Report Generation':
         return renderSipp()
+      case 'Activity Log':
+        return renderActivityLog()
       case 'Settings/Profile':
         return renderSettings()
       default:
@@ -2422,6 +2614,7 @@ function App() {
             setAssigningHte(viewingStudent)
             setViewingStudent(null)
           }}
+          onSendFeedback={(message) => sendFeedbackToStudent(viewingStudent.userId, message)}
           onRemove={() => {
             removeStudentFromClass(viewingStudent)
             setViewingStudent(null)

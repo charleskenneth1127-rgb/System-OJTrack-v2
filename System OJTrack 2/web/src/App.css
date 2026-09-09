@@ -1786,6 +1786,35 @@ tbody td {
   color: var(--text-main);
 }
 
+.profile-name-edit-trigger {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 0;
+}
+
+.profile-name-edit-trigger:hover {
+  color: var(--primary);
+}
+
+.profile-name-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.profile-name-input {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-main);
+  font-size: 0.95rem;
+}
+
 .profile-id {
   display: block;
   color: var(--text-muted);

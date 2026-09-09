@@ -73,11 +73,18 @@ Future<bool> _initializeFirebase() async {
     await Firebase.initializeApp(options: _firebaseOptions);
     if (kDebugMode) {
       // Android emulator reaches the host machine's localhost via the special
-      // alias 10.0.2.2. The iOS Simulator and a desktop browser both share
-      // the host's network directly, so `localhost` reaches the emulator
-      // suite for them. Run `firebase emulators:start` from the repo root
-      // before `flutter run`.
-      final host = (kIsWeb || isIOSPlatform) ? 'localhost' : '10.0.2.2';
+      // alias 10.0.2.2 — but that alias only resolves inside the Android
+      // Studio virtual emulator, not on a real physical phone. A real device
+      // needs the host machine's actual LAN IP instead (phone and computer
+      // on the same Wi-Fi), which isn't knowable at compile time, so it's
+      // passed in explicitly:
+      //   flutter run --dart-define=EMULATOR_HOST=192.168.1.23 -d <deviceId>
+      // The iOS Simulator and a desktop browser both share the host's
+      // network directly, so `localhost` reaches the emulator suite for them
+      // regardless. Run `firebase emulators:start` from the repo root before
+      // `flutter run`.
+      const overrideHost = String.fromEnvironment('EMULATOR_HOST');
+      final host = overrideHost.isNotEmpty ? overrideHost : ((kIsWeb || isIOSPlatform) ? 'localhost' : '10.0.2.2');
       await FirebaseAuth.instance.useAuthEmulator(host, 9099);
       FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
       await FirebaseStorage.instance.useStorageEmulator(host, 9199);

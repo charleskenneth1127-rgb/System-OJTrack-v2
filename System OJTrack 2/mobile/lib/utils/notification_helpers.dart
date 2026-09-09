@@ -20,6 +20,10 @@ String notificationTitle(String? type) {
       return 'Class join approved';
     case 'class_join_rejected':
       return 'Class join declined';
+    case 'coordinator_feedback':
+      return 'Message from coordinator';
+    case 'deadline_reminder':
+      return 'Deadline reminder';
     default:
       return 'Notification';
   }

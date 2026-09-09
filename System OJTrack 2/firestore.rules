@@ -120,5 +120,13 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if isCoordinator();
     }
+
+    // Activity log (System Administration Module) — an immutable audit trail
+    // of coordinator actions, so no update/delete: once written, an entry
+    // stands even if the coordinator's own account changes later.
+    match /activity_logs/{logId} {
+      allow read: if isCoordinator();
+      allow create: if isCoordinator();
+    }
   }
 }

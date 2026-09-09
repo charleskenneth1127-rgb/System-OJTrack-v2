@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import type { AttendanceLogRecord, HteRecord, StudentRecord, UserRecord } from '../types'
 import Avatar from './Avatar'
 
@@ -11,6 +11,7 @@ interface StudentProfileModalProps {
   onClose: () => void
   onAssignHte: () => void
   onRemove: () => void
+  onSendFeedback: (message: string) => Promise<void> | void
 }
 
 const formatLogDate = (value: unknown): string => {
@@ -41,12 +42,30 @@ const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   onClose,
   onAssignHte,
   onRemove,
+  onSendFeedback,
 }) => {
   const name = studentUser?.displayName || 'Unnamed student'
   const pct = student.requiredHours > 0 ? Math.round((student.renderedHours / student.requiredHours) * 100) : 0
   const clampedPct = Math.min(100, pct)
   const tier = tierFor(pct)
   const dashOffset = RING_CIRCUMFERENCE * (1 - clampedPct / 100)
+
+  const [feedbackMessage, setFeedbackMessage] = useState('')
+  const [sendingFeedback, setSendingFeedback] = useState(false)
+  const [feedbackSent, setFeedbackSent] = useState(false)
+
+  const handleSendFeedback = async () => {
+    if (!feedbackMessage.trim()) return
+    setSendingFeedback(true)
+    setFeedbackSent(false)
+    try {
+      await onSendFeedback(feedbackMessage)
+      setFeedbackMessage('')
+      setFeedbackSent(true)
+    } finally {
+      setSendingFeedback(false)
+    }
+  }
 
   const recentLogs = [...attendanceLogs]
     .sort((a, b) => {
@@ -154,6 +173,32 @@ const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
               ))}
             </div>
           )}
+
+          <div className="roster-divider" />
+
+          <h4>Send Feedback</h4>
+          <label className="modal-field">
+            Message to {name}
+            <textarea
+              value={feedbackMessage}
+              onChange={(e) => {
+                setFeedbackMessage(e.target.value)
+                setFeedbackSent(false)
+              }}
+              placeholder="e.g. Great work on your last weekly report — keep it up."
+              rows={3}
+            />
+          </label>
+          <div className="button-row">
+            <button
+              className="secondary-button"
+              onClick={handleSendFeedback}
+              disabled={!feedbackMessage.trim() || sendingFeedback}
+            >
+              {sendingFeedback ? 'Sending…' : 'Send Feedback'}
+            </button>
+            {feedbackSent && <span className="preferences-saved-note">Sent</span>}
+          </div>
         </div>
 
         <div className="modal-footer-split">

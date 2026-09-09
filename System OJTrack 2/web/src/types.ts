@@ -139,6 +139,16 @@ export interface SystemPreferencesRecord {
   lateThresholdMinutes: number
 }
 
+/** An immutable audit trail entry — see the Activity Log under System Administration. */
+export interface ActivityLogRecord {
+  id: string
+  actorId: string
+  actorName: string
+  action: string
+  details: string
+  createdAt: any // Firestore Timestamp
+}
+
 export interface NotificationRecord {
   id: string
   recipientId: string

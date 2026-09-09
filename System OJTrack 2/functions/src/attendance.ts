@@ -242,5 +242,80 @@ export const dailyAbsenceCheck = onSchedule(
         });
       }
     }
+
+    // Incomplete requirements — a student with no approved MOA on file
+    // (the one document CHED/the school actually requires before an
+    // internship placement is valid). Re-checked daily alongside absences,
+    // but only re-notified once a week per student so this doesn't spam the
+    // coordinator every evening for the same outstanding document.
+    const INCOMPLETE_DOCS_RENOTIFY_DAYS = 7;
+    for (const studentDoc of studentsSnap.docs) {
+      const studentId = studentDoc.id;
+      const lastAlert = studentDoc.data().lastIncompleteDocsAlertAt as string | undefined;
+      if (lastAlert) {
+        const daysSince = (now.getTime() - new Date(lastAlert).getTime()) / (1000 * 60 * 60 * 24);
+        if (daysSince < INCOMPLETE_DOCS_RENOTIFY_DAYS) continue;
+      }
+
+      const approvedMoaSnap = await db
+        .collection('pre_ojt_documents')
+        .where('studentId', '==', studentId)
+        .where('docType', '==', 'MOA')
+        .where('status', '==', 'approved')
+        .limit(1)
+        .get();
+      if (!approvedMoaSnap.empty) continue;
+
+      const context = await getClassContextForStudent(studentId);
+      if (!context) continue;
+
+      const name = await getStudentDisplayName(studentId);
+      await studentDoc.ref.update({ lastIncompleteDocsAlertAt: now.toISOString() });
+      await createNotification({
+        recipientId: context.coordinatorId,
+        type: 'incomplete_requirements',
+        message: `${name} still has no approved MOA on file.`,
+        classId: context.classId,
+        studentId,
+      });
+    }
+  },
+);
+
+/**
+ * Runs Friday evenings (Asia/Manila). Reminds a student if they haven't
+ * submitted a weekly report since the start of the current week (Monday) —
+ * the "deadline reminders" the mobile app's notification module promises,
+ * distinct from dailyAbsenceCheck above which alerts the coordinator, not
+ * the student.
+ */
+export const weeklyReportReminder = onSchedule(
+  { schedule: 'every friday 18:00', timeZone: 'Asia/Manila' },
+  async () => {
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    const daysSinceMonday = (startOfWeek.getDay() + 6) % 7;
+    startOfWeek.setDate(startOfWeek.getDate() - daysSinceMonday);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const studentsSnap = await db.collection('students').where('classId', '!=', '').get();
+
+    for (const studentDoc of studentsSnap.docs) {
+      const studentId = studentDoc.id;
+      const weeklyReportsSnap = await db
+        .collection('reports')
+        .where('studentId', '==', studentId)
+        .where('type', '==', 'weekly')
+        .where('submittedAt', '>=', startOfWeek)
+        .limit(1)
+        .get();
+      if (!weeklyReportsSnap.empty) continue;
+
+      await createNotification({
+        recipientId: studentId,
+        type: 'deadline_reminder',
+        message: "You haven't submitted a weekly accomplishment report yet this week.",
+      });
+    }
   },
 );

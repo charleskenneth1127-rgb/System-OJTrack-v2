@@ -1,4 +1,4 @@
-export { onAttendanceLogCreated, onAttendanceLogStatusChanged, dailyAbsenceCheck } from './attendance';
+export { onAttendanceLogCreated, onAttendanceLogStatusChanged, dailyAbsenceCheck, weeklyReportReminder } from './attendance';
 export { onClassJoinRequestCreated, onClassJoinRequestStatusChanged } from './classes';
 export { onReportCreated, onReportStatusChanged } from './reports';
 export { onPreOjtDocumentCreated, onPreOjtDocumentStatusChanged } from './documents';

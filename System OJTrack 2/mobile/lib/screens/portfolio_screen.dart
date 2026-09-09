@@ -52,13 +52,13 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     );
     if (title == null || title.isEmpty || !mounted) return;
 
-    final file = await pickAttachment(context);
-    if (file == null || !mounted) return;
+    final attachment = await pickDocumentAttachment(context);
+    if (attachment == null || !mounted) return;
 
     setState(() => _uploading = true);
     try {
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final fileUrl = await uploadAttachment(file, 'portfolio/${user.uid}/$fileName');
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}.${attachment.extension}';
+      final fileUrl = await uploadBytes(attachment.bytes, 'portfolio/${user.uid}/$fileName');
       await FirebaseFirestore.instance.collection('portfolio_items').add({
         'studentId': user.uid,
         'title': title,
