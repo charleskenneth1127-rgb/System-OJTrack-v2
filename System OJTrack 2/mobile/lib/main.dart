@@ -19,6 +19,7 @@ import 'screens/portfolio_screen.dart';
 import 'screens/notifications_screen.dart';
 import 'screens/profile_screen.dart';
 import 'theme/ndmu_theme.dart';
+import 'theme/theme_controller.dart';
 import 'utils/platform_target.dart';
 import 'utils/push_notifications.dart';
 
@@ -116,12 +117,17 @@ class OJTrackStudentApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'OJTrack Student',
-      debugShowCheckedModeBanner: false,
-      scaffoldMessengerKey: rootScaffoldMessengerKey,
-      theme: buildNdmuTheme(),
-      home: AuthGate(firebaseAvailable: firebaseAvailable),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeController,
+      builder: (context, mode, _) => MaterialApp(
+        title: 'OJTrack Student',
+        debugShowCheckedModeBanner: false,
+        scaffoldMessengerKey: rootScaffoldMessengerKey,
+        theme: buildNdmuTheme(),
+        darkTheme: buildNdmuDarkTheme(),
+        themeMode: mode,
+        home: AuthGate(firebaseAvailable: firebaseAvailable),
+      ),
     );
   }
 }
@@ -492,6 +498,18 @@ class _StudentHomePageState extends State<StudentHomePage> {
       appBar: AppBar(
         title: const Text('OJTrack'),
         actions: [
+          ValueListenableBuilder<ThemeMode>(
+            valueListenable: themeController,
+            builder: (context, mode, _) {
+              final isDark = mode == ThemeMode.dark ||
+                  (mode == ThemeMode.system && MediaQuery.platformBrightnessOf(context) == Brightness.dark);
+              return IconButton(
+                icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+                tooltip: isDark ? 'Switch to light mode' : 'Switch to dark mode',
+                onPressed: () => themeController.toggle(context),
+              );
+            },
+          ),
           Stack(
             clipBehavior: Clip.none,
             children: [
@@ -930,7 +948,10 @@ class _StudentHomePageState extends State<StudentHomePage> {
                                 value: value,
                                 strokeWidth: 12,
                                 strokeCap: StrokeCap.round,
-                                backgroundColor: Colors.grey.shade200,
+                                backgroundColor:
+                                    Theme.of(context).brightness == Brightness.dark
+                                        ? Colors.white24
+                                        : Colors.grey.shade200,
                                 valueColor: AlwaysStoppedAnimation<Color>(
                                   tierColor,
                                 ),

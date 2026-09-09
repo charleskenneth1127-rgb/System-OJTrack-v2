@@ -123,7 +123,7 @@ class _CoordinatorBubble extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Theme.of(context).colorScheme.surface,
                     borderRadius: BorderRadius.circular(16).copyWith(topLeft: const Radius.circular(4)),
                     border: Border.all(color: NdmuColors.gold.withAlpha((0.35 * 255).round())),
                   ),
