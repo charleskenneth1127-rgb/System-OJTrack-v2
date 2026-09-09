@@ -113,8 +113,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             clipBehavior: Clip.none,
                             children: [
                               Container(
-                                width: 58,
-                                height: 58,
+                                width: 92,
+                                height: 92,
                                 decoration: BoxDecoration(
                                   color: Colors.white.withAlpha((0.16 * 255).round()),
                                   shape: BoxShape.circle,
@@ -123,7 +123,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       : null,
                                 ),
                                 child: photoUrl == null
-                                    ? const Icon(Icons.person, color: Colors.white, size: 30)
+                                    ? const Icon(Icons.person, color: Colors.white, size: 46)
                                     : null,
                               ),
                               Positioned(
@@ -132,18 +132,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 child: GestureDetector(
                                   onTap: _uploadingPhoto ? null : () => _changePhoto(user.uid),
                                   child: Container(
-                                    padding: const EdgeInsets.all(5),
+                                    padding: const EdgeInsets.all(7),
                                     decoration: const BoxDecoration(
                                       color: NdmuColors.gold,
                                       shape: BoxShape.circle,
                                     ),
                                     child: _uploadingPhoto
                                         ? const SizedBox(
-                                            width: 12,
-                                            height: 12,
+                                            width: 16,
+                                            height: 16,
                                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                                           )
-                                        : const Icon(Icons.camera_alt, color: Colors.white, size: 12),
+                                        : const Icon(Icons.camera_alt, color: Colors.white, size: 16),
                                   ),
                                 ),
                               ),
