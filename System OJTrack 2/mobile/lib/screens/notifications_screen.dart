@@ -5,10 +5,49 @@ import 'package:intl/intl.dart';
 import '../theme/ndmu_theme.dart';
 import '../utils/notification_helpers.dart';
 import '../widgets/empty_state.dart';
+import 'attendance_screen.dart';
+import 'documents_screen.dart';
 import 'messages_screen.dart';
+import 'reports_screen.dart';
 
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
+
+  /// Routes a tapped notification to the screen it's actually about, so the
+  /// student doesn't have to leave Notifications and hunt for the right tab
+  /// themselves. Types with no specific page (e.g. class-join decisions,
+  /// which just change the dashboard's HTE card) fall through to the
+  /// dashboard by popping back to it.
+  void _navigateForType(BuildContext context, String? type) {
+    switch (type) {
+      case 'coordinator_feedback':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const MessagesScreen()));
+        return;
+      case 'attendance':
+      case 'attendance_verified':
+      case 'attendance_flagged':
+      case 'attendance_error':
+      case 'absence':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const AttendanceScreen()));
+        return;
+      case 'report_review':
+      case 'deadline_reminder':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const ReportsScreen()));
+        return;
+      case 'document_review':
+      case 'incomplete_requirements':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const DocumentsScreen()));
+        return;
+      case 'internship_completed':
+      case 'class_join_approved':
+      case 'class_join_rejected':
+      case 'hours_correction':
+        Navigator.popUntil(context, (route) => route.isFirst);
+        return;
+      default:
+        return;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -74,12 +113,7 @@ class NotificationsScreen extends StatelessWidget {
                           if (!read) {
                             FirebaseFirestore.instance.collection('notifications').doc(doc.id).update({'read': true});
                           }
-                          if (data['type'] == 'coordinator_feedback') {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => const MessagesScreen()),
-                            );
-                          }
+                          _navigateForType(context, data['type'] as String?);
                         },
                       ),
                     );

@@ -24,6 +24,12 @@ String notificationTitle(String? type) {
       return 'Message from coordinator';
     case 'deadline_reminder':
       return 'Deadline reminder';
+    case 'incomplete_requirements':
+      return 'Missing requirements';
+    case 'attendance_error':
+      return 'Attendance issue';
+    case 'absence':
+      return 'Absence recorded';
     default:
       return 'Notification';
   }
