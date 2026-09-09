@@ -104,6 +104,31 @@ Future<bool> _initializeFirebase() async {
   }
 }
 
+/// Shared confirmation dialog before signing out — logging out loses nothing
+/// server-side, but re-authenticating with a Student ID and password is
+/// enough friction that an accidental tap on the logout icon is worth
+/// guarding against.
+Future<bool> _confirmLogout(BuildContext context) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Log out?'),
+      content: const Text("You'll need to sign back in with your Student ID to continue."),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: const Text('Log out'),
+        ),
+      ],
+    ),
+  );
+  return confirmed ?? false;
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final firebaseAvailable = await _initializeFirebase();
@@ -146,6 +171,7 @@ class _AuthGateState extends State<AuthGate> {
   bool _showSignUp = false;
 
   Future<void> _handleLogout() async {
+    if (!await _confirmLogout(context)) return;
     await FirebaseAuth.instance.signOut();
   }
 
@@ -472,7 +498,8 @@ class _StudentHomePageState extends State<StudentHomePage> {
     }
   }
 
-  void _logout() {
+  Future<void> _logout() async {
+    if (!await _confirmLogout(context)) return;
     if (widget.demoMode && widget.onExitDemo != null) {
       widget.onExitDemo!();
     } else {

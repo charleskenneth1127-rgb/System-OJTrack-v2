@@ -14,6 +14,7 @@ import HteEvaluationForm from './components/HteEvaluationForm'
 import EmptyState from './components/EmptyState'
 import AssignHteModal from './components/AssignHteModal'
 import StudentProfileModal from './components/StudentProfileModal'
+import ConfirmLogoutModal from './components/ConfirmLogoutModal'
 import AttendancePhotoModal from './components/AttendancePhotoModal'
 import ReviewRowList from './components/ReviewRowList'
 import type { ReviewRow } from './components/ReviewRowList'
@@ -2466,7 +2467,10 @@ function App() {
     )
   }
 
+  const [confirmingLogout, setConfirmingLogout] = useState(false)
+
   const handleLogout = async () => {
+    setConfirmingLogout(false)
     try {
       await auth.signOut()
     } catch (error) {
@@ -2545,9 +2549,12 @@ function App() {
         </nav>
         <div className="sidebar-footer">
           <p>{user.displayName}</p>
-          <button onClick={handleLogout} className="logout-button">Logout</button>
+          <button onClick={() => setConfirmingLogout(true)} className="logout-button">Logout</button>
         </div>
       </aside>
+      {confirmingLogout && (
+        <ConfirmLogoutModal onConfirm={handleLogout} onCancel={() => setConfirmingLogout(false)} />
+      )}
       <main className="main-panel">
         <header className="topbar">
           <div>
