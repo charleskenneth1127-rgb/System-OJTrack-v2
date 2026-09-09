@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../theme/ndmu_theme.dart';
 import '../utils/submission_helpers.dart';
+import '../widgets/photo_viewer_screen.dart';
 import 'change_password_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -25,9 +26,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
+  void _viewPhoto(BuildContext context, String photoUrl) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PhotoViewerScreen(photoUrl: photoUrl)),
+    );
+  }
+
   Future<void> _changePhoto(String uid) async {
-    // Displayed at 58px at most, so there's no reason to keep a full-size
-    // photo around — this keeps uploads fast and Storage usage small.
+    // Displayed at 92px at most (full-size view opens via _viewPhoto), so
+    // there's no reason to keep a full-size photo around — this keeps
+    // uploads fast and Storage usage small.
     final file = await pickAttachment(context, maxWidth: 512, maxHeight: 512);
     if (file == null) return;
 
@@ -112,19 +121,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           Stack(
                             clipBehavior: Clip.none,
                             children: [
-                              Container(
-                                width: 92,
-                                height: 92,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withAlpha((0.16 * 255).round()),
-                                  shape: BoxShape.circle,
-                                  image: photoUrl != null
-                                      ? DecorationImage(image: NetworkImage(photoUrl), fit: BoxFit.cover)
+                              GestureDetector(
+                                onTap: photoUrl != null ? () => _viewPhoto(context, photoUrl) : null,
+                                child: Container(
+                                  width: 92,
+                                  height: 92,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withAlpha((0.16 * 255).round()),
+                                    shape: BoxShape.circle,
+                                    image: photoUrl != null
+                                        ? DecorationImage(image: NetworkImage(photoUrl), fit: BoxFit.cover)
+                                        : null,
+                                  ),
+                                  child: photoUrl == null
+                                      ? const Icon(Icons.person, color: Colors.white, size: 46)
                                       : null,
                                 ),
-                                child: photoUrl == null
-                                    ? const Icon(Icons.person, color: Colors.white, size: 46)
-                                    : null,
                               ),
                               Positioned(
                                 bottom: -2,

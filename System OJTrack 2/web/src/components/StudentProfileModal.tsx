@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import type { AttendanceLogRecord, HteRecord, StudentRecord, UserRecord } from '../types'
 import Avatar from './Avatar'
+import PhotoLightbox from './PhotoLightbox'
 
 interface StudentProfileModalProps {
   student: StudentRecord
@@ -53,6 +54,7 @@ const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
   const [feedbackMessage, setFeedbackMessage] = useState('')
   const [sendingFeedback, setSendingFeedback] = useState(false)
   const [feedbackSent, setFeedbackSent] = useState(false)
+  const [viewingPhoto, setViewingPhoto] = useState(false)
 
   const handleSendFeedback = async () => {
     if (!feedbackMessage.trim()) return
@@ -87,7 +89,18 @@ const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
 
         <div className="modal-body">
           <div className="profile-identity">
-            <Avatar name={name} photoUrl={studentUser?.photoUrl} seed={student.userId} size={84} />
+            {studentUser?.photoUrl ? (
+              <button
+                type="button"
+                className="avatar-click-target"
+                onClick={() => setViewingPhoto(true)}
+                aria-label={`View ${name}'s photo`}
+              >
+                <Avatar name={name} photoUrl={studentUser.photoUrl} seed={student.userId} size={84} />
+              </button>
+            ) : (
+              <Avatar name={name} photoUrl={undefined} seed={student.userId} size={84} />
+            )}
             <div>
               <strong className="profile-name">{name}</strong>
               <span className="mono profile-id">{studentUser?.studentIdCode || studentUser?.email || student.userId}</span>
@@ -212,6 +225,9 @@ const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
           </div>
         </div>
       </div>
+      {viewingPhoto && studentUser?.photoUrl && (
+        <PhotoLightbox photoUrl={studentUser.photoUrl} alt={`${name}'s photo`} onClose={() => setViewingPhoto(false)} />
+      )}
     </div>
   )
 }

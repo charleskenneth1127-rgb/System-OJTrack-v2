@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent } from 'react'
 import './App.css'
 import Login from './components/Login'
 import Avatar from './components/Avatar'
+import PhotoLightbox from './components/PhotoLightbox'
 import EditHoursModal from './components/EditHoursModal'
 import EditClassModal from './components/EditClassModal'
 import EditHteModal from './components/EditHteModal'
@@ -360,6 +361,7 @@ function App() {
   const [addCoordinatorError, setAddCoordinatorError] = useState('')
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [avatarError, setAvatarError] = useState('')
+  const [viewingOwnPhoto, setViewingOwnPhoto] = useState(false)
   const [editingName, setEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
   const [savingName, setSavingName] = useState(false)
@@ -2398,7 +2400,18 @@ function App() {
           <h3>Profile & settings</h3>
           <p>Your coordinator profile.</p>
           <div className="profile-identity">
-            <Avatar name={user.displayName} photoUrl={user.photoUrl} seed={user.id} size={52} />
+            {user.photoUrl ? (
+              <button
+                type="button"
+                className="avatar-click-target"
+                onClick={() => setViewingOwnPhoto(true)}
+                aria-label="View your photo"
+              >
+                <Avatar name={user.displayName} photoUrl={user.photoUrl} seed={user.id} size={52} />
+              </button>
+            ) : (
+              <Avatar name={user.displayName} photoUrl={undefined} seed={user.id} size={52} />
+            )}
             <div>
               {editingName ? (
                 <div className="profile-name-edit">
@@ -2446,6 +2459,9 @@ function App() {
             Firebase if it's ever wrong.
           </p>
         </div>
+        {viewingOwnPhoto && user.photoUrl && (
+          <PhotoLightbox photoUrl={user.photoUrl} alt="Your photo" onClose={() => setViewingOwnPhoto(false)} />
+        )}
       </div>
     )
   }

@@ -2101,6 +2101,56 @@ tbody td {
   background: #e2e8f0;
 }
 
+.avatar-click-target {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 50%;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.avatar-click-target:hover {
+  filter: brightness(0.92);
+}
+
+.photo-lightbox-overlay {
+  z-index: 300;
+  padding: 32px;
+}
+
+.photo-lightbox-card {
+  position: relative;
+  max-width: min(90vw, 520px);
+  max-height: 90vh;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 32px 70px rgba(15, 23, 42, 0.4);
+  line-height: 0;
+}
+
+.photo-lightbox-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 90vh;
+  object-fit: contain;
+  background: var(--surface-strong);
+}
+
+.photo-lightbox-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(15, 23, 42, 0.6);
+  color: #fff;
+}
+
+.photo-lightbox-close:hover {
+  background: rgba(15, 23, 42, 0.8);
+}
+
 .modal-body {
   padding: 14px 20px;
   display: grid;
