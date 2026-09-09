@@ -85,7 +85,9 @@ Future<bool> _initializeFirebase() async {
       // regardless. Run `firebase emulators:start` from the repo root before
       // `flutter run`.
       const overrideHost = String.fromEnvironment('EMULATOR_HOST');
-      final host = overrideHost.isNotEmpty ? overrideHost : ((kIsWeb || isIOSPlatform) ? 'localhost' : '10.0.2.2');
+      final host = overrideHost.isNotEmpty
+          ? overrideHost
+          : ((kIsWeb || isIOSPlatform) ? 'localhost' : '10.0.2.2');
       await FirebaseAuth.instance.useAuthEmulator(host, 9099);
       FirebaseFirestore.instance.useFirestoreEmulator(host, 8080);
       await FirebaseStorage.instance.useStorageEmulator(host, 9199);
@@ -93,7 +95,9 @@ Future<bool> _initializeFirebase() async {
     return true;
   } catch (e, stack) {
     debugPrint('Firebase initialization failed: $e');
-    debugPrint('Ensure the Firebase Emulator Suite is running (firebase emulators:start).');
+    debugPrint(
+      'Ensure the Firebase Emulator Suite is running (firebase emulators:start).',
+    );
     debugPrint(stack.toString());
     return false;
   }
@@ -171,7 +175,10 @@ class _AuthGateState extends State<AuthGate> {
         if (snapshot.hasData) {
           final user = snapshot.data!;
           return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
+            stream: FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .snapshots(),
             builder: (context, userDocSnapshot) {
               if (userDocSnapshot.connectionState == ConnectionState.waiting) {
                 return const Scaffold(
@@ -184,9 +191,13 @@ class _AuthGateState extends State<AuthGate> {
                 return const ChangePasswordScreen();
               }
               return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                stream: FirebaseFirestore.instance.collection('students').doc(user.uid).snapshots(),
+                stream: FirebaseFirestore.instance
+                    .collection('students')
+                    .doc(user.uid)
+                    .snapshots(),
                 builder: (context, studentDocSnapshot) {
-                  if (studentDocSnapshot.connectionState == ConnectionState.waiting) {
+                  if (studentDocSnapshot.connectionState ==
+                      ConnectionState.waiting) {
                     return const Scaffold(
                       body: Center(child: CircularProgressIndicator()),
                     );
@@ -194,7 +205,10 @@ class _AuthGateState extends State<AuthGate> {
                   if (studentDocSnapshot.data?.exists != true) {
                     return JoinClassScreen(onLogout: _handleLogout);
                   }
-                  final displayName = (data?['displayName'] as String?) ?? user.displayName ?? 'Intern';
+                  final displayName =
+                      (data?['displayName'] as String?) ??
+                      user.displayName ??
+                      'Intern';
                   return StudentHomePage(
                     demoMode: false,
                     displayName: displayName,
@@ -205,7 +219,9 @@ class _AuthGateState extends State<AuthGate> {
           );
         }
         if (_showSignUp) {
-          return SignUpScreen(onBackToLogin: () => setState(() => _showSignUp = false));
+          return SignUpScreen(
+            onBackToLogin: () => setState(() => _showSignUp = false),
+          );
         }
         return LoginScreen(
           onCreateAccount: () => setState(() => _showSignUp = true),
@@ -299,57 +315,84 @@ class _StudentHomePageState extends State<StudentHomePage> {
 
     final db = FirebaseFirestore.instance;
 
-    _studentSub = db.collection('students').doc(currentUser.uid).snapshots().listen((doc) {
-      final data = doc.data();
-      if (data == null || !mounted) return;
-      final requiredHours = (data['requiredHours'] as num?)?.toInt() ?? 600;
-      final renderedHours = (data['renderedHours'] as num?)?.toInt() ?? 0;
-      final assignedHteId = data['assignedHteId'] as String?;
-      setState(() {
-        _targetHours = requiredHours;
-        _hoursLogged = renderedHours;
-        _compliancePercent = _targetHours > 0 ? min(100, (_hoursLogged * 100 ~/ _targetHours)) : 0;
-        _loadingMetrics = false;
-        _completionStatus = data['completionStatus'] as String?;
-        _completedAt = data['completedAt'] as String?;
-      });
-
-      // Re-subscribe to the assigned HTE only when it actually changes, so a
-      // coordinator's later hour corrections don't churn this listener.
-      if (assignedHteId != _lastAssignedHteId) {
-        _lastAssignedHteId = assignedHteId;
-        _hteSub?.cancel();
-        if (assignedHteId == null || assignedHteId.isEmpty) {
+    _studentSub = db
+        .collection('students')
+        .doc(currentUser.uid)
+        .snapshots()
+        .listen((doc) {
+          final data = doc.data();
+          if (data == null || !mounted) return;
+          final requiredHours = (data['requiredHours'] as num?)?.toInt() ?? 600;
+          final renderedHours = (data['renderedHours'] as num?)?.toInt() ?? 0;
+          final assignedHteId = data['assignedHteId'] as String?;
           setState(() {
-            _hteName = null;
-            _hteSupervisorName = null;
+            _targetHours = requiredHours;
+            _hoursLogged = renderedHours;
+            _compliancePercent = _targetHours > 0
+                ? min(100, (_hoursLogged * 100 ~/ _targetHours))
+                : 0;
+            _loadingMetrics = false;
+            _completionStatus = data['completionStatus'] as String?;
+            _completedAt = data['completedAt'] as String?;
           });
-        } else {
-          _hteSub = db.collection('htes').doc(assignedHteId).snapshots().listen((hteDoc) {
-            if (!mounted) return;
-            final hteData = hteDoc.data();
-            setState(() {
-              _hteName = hteData?['name'] as String?;
-              _hteSupervisorName = hteData?['supervisorName'] as String?;
-            });
-          }, onError: (Object e) => debugPrint('HTE listener failed: $e'));
-        }
-      }
-    }, onError: (Object e) => debugPrint('Student listener failed: $e'));
+
+          // Re-subscribe to the assigned HTE only when it actually changes, so a
+          // coordinator's later hour corrections don't churn this listener.
+          if (assignedHteId != _lastAssignedHteId) {
+            _lastAssignedHteId = assignedHteId;
+            _hteSub?.cancel();
+            if (assignedHteId == null || assignedHteId.isEmpty) {
+              setState(() {
+                _hteName = null;
+                _hteSupervisorName = null;
+              });
+            } else {
+              _hteSub = db
+                  .collection('htes')
+                  .doc(assignedHteId)
+                  .snapshots()
+                  .listen(
+                    (hteDoc) {
+                      if (!mounted) return;
+                      final hteData = hteDoc.data();
+                      setState(() {
+                        _hteName = hteData?['name'] as String?;
+                        _hteSupervisorName =
+                            hteData?['supervisorName'] as String?;
+                      });
+                    },
+                    onError: (Object e) =>
+                        debugPrint('HTE listener failed: $e'),
+                  );
+            }
+          }
+        }, onError: (Object e) => debugPrint('Student listener failed: $e'));
 
     _notificationsSub = db
         .collection('notifications')
         .where('recipientId', isEqualTo: currentUser.uid)
         .snapshots()
-        .listen((snap) {
-      if (!mounted) return;
-      setState(() {
-        _unreadCount = snap.docs.where((d) => d.data()['read'] != true).length;
-      });
-    }, onError: (Object e) => debugPrint('Notifications listener failed: $e'));
+        .listen(
+          (snap) {
+            if (!mounted) return;
+            setState(() {
+              _unreadCount = snap.docs
+                  .where((d) => d.data()['read'] != true)
+                  .length;
+            });
+          },
+          onError: (Object e) =>
+              debugPrint('Notifications listener failed: $e'),
+        );
   }
 
-  static const List<String> _tabLabels = ['Home', 'Attendance', 'Reports', 'Documents', 'Portfolio'];
+  static const List<String> _tabLabels = [
+    'Home',
+    'Attendance',
+    'Reports',
+    'Documents',
+    'Portfolio',
+  ];
 
   /// Attendance/Reports/Documents/Portfolio all talk to Firestore directly,
   /// so in true offline mode (no Firebase app at all) they're swapped for a
@@ -392,9 +435,36 @@ class _StudentHomePageState extends State<StudentHomePage> {
   void _onNavTap(int index) => _openTab(index, isWide: false);
 
   void _openProfile(BuildContext context) => Navigator.push(
+    context,
+    MaterialPageRoute(builder: (_) => const ProfileScreen()),
+  );
+
+  /// Clears the bell's unread badge as soon as the student opens the list —
+  /// they've seen what's there, so there's no reason to make them tap each
+  /// notification individually just to make the count go away.
+  Future<void> _openNotifications(BuildContext context) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      final unread = await FirebaseFirestore.instance
+          .collection('notifications')
+          .where('recipientId', isEqualTo: uid)
+          .where('read', isEqualTo: false)
+          .get();
+      if (unread.docs.isNotEmpty) {
+        final batch = FirebaseFirestore.instance.batch();
+        for (final doc in unread.docs) {
+          batch.update(doc.reference, {'read': true});
+        }
+        await batch.commit();
+      }
+    }
+    if (context.mounted) {
+      Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+        MaterialPageRoute(builder: (_) => const NotificationsScreen()),
       );
+    }
+  }
 
   void _logout() {
     if (widget.demoMode && widget.onExitDemo != null) {
@@ -430,7 +500,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
                 tooltip: 'Notifications',
                 onPressed: widget.demoMode
                     ? null
-                    : () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationsScreen())),
+                    : () => _openNotifications(context),
               ),
               if (_unreadCount > 0)
                 Positioned(
@@ -438,11 +508,21 @@ class _StudentHomePageState extends State<StudentHomePage> {
                   top: 6,
                   child: Container(
                     padding: const EdgeInsets.all(3),
-                    decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
-                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    decoration: const BoxDecoration(
+                      color: Colors.redAccent,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
                     child: Text(
                       _unreadCount > 9 ? '9+' : '$_unreadCount',
-                      style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -455,10 +535,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
               tooltip: 'Profile',
               onPressed: () => _openProfile(context),
             ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: _logout,
-          ),
+          IconButton(icon: const Icon(Icons.logout), onPressed: _logout),
         ],
       ),
       body: SingleChildScrollView(
@@ -470,36 +547,55 @@ class _StudentHomePageState extends State<StudentHomePage> {
       ),
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: NavigationBar(
-          selectedIndex: _selectedIndex,
-          onDestinationSelected: _onNavTap,
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home),
-              label: 'Home',
+        // Five labels ("Attendance", "Documents", "Portfolio") is tight on
+        // narrower phones, made worse by a device's own accessibility text
+        // size setting — clamp that scaling here (rather than shrinking the
+        // whole app) and use a smaller fixed label size, so this fits on any
+        // device instead of just the one it happened to be tested on.
+        child: MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: MediaQuery.textScalerOf(
+              context,
+            ).clamp(maxScaleFactor: 1.1),
+          ),
+          child: NavigationBarTheme(
+            data: NavigationBarThemeData(
+              labelTextStyle: WidgetStateProperty.all(
+                const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600),
+              ),
             ),
-            NavigationDestination(
-              icon: Icon(Icons.login),
-              selectedIcon: Icon(Icons.login),
-              label: 'Attendance',
+            child: NavigationBar(
+              selectedIndex: _selectedIndex,
+              onDestinationSelected: _onNavTap,
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: 'Home',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.login),
+                  selectedIcon: Icon(Icons.login),
+                  label: 'Attendance',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.description_outlined),
+                  selectedIcon: Icon(Icons.description),
+                  label: 'Reports',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.folder_open_outlined),
+                  selectedIcon: Icon(Icons.folder_open),
+                  label: 'Documents',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.star_outline),
+                  selectedIcon: Icon(Icons.star),
+                  label: 'Portfolio',
+                ),
+              ],
             ),
-            NavigationDestination(
-              icon: Icon(Icons.description_outlined),
-              selectedIcon: Icon(Icons.description),
-              label: 'Reports',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.folder_open_outlined),
-              selectedIcon: Icon(Icons.folder_open),
-              label: 'Documents',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.star_outline),
-              selectedIcon: Icon(Icons.star),
-              label: 'Portfolio',
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -575,8 +671,13 @@ class _StudentHomePageState extends State<StudentHomePage> {
     return 'Good evening';
   }
 
-  List<Widget> _buildDashboardChildren(BuildContext context, {required bool isWide}) {
-    final firstName = widget.displayName.trim().isEmpty ? 'Intern' : widget.displayName.trim().split(' ').first;
+  List<Widget> _buildDashboardChildren(
+    BuildContext context, {
+    required bool isWide,
+  }) {
+    final firstName = widget.displayName.trim().isEmpty
+        ? 'Intern'
+        : widget.displayName.trim().split(' ').first;
     final (tierLabel, tierColor) = _hourTierFor(_compliancePercent);
     final remainingHours = (_targetHours - _hoursLogged).clamp(0, _targetHours);
 
@@ -638,7 +739,9 @@ class _StudentHomePageState extends State<StudentHomePage> {
   }
 
   Widget _buildCompletionBanner() {
-    final completedDate = _completedAt != null ? DateTime.tryParse(_completedAt!) : null;
+    final completedDate = _completedAt != null
+        ? DateTime.tryParse(_completedAt!)
+        : null;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -649,7 +752,11 @@ class _StudentHomePageState extends State<StudentHomePage> {
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: const [
-          BoxShadow(color: Color.fromRGBO(0, 0, 0, 0.1), blurRadius: 18, offset: Offset(0, 10)),
+          BoxShadow(
+            color: Color.fromRGBO(0, 0, 0, 0.1),
+            blurRadius: 18,
+            offset: Offset(0, 10),
+          ),
         ],
       ),
       child: Row(
@@ -662,13 +769,20 @@ class _StudentHomePageState extends State<StudentHomePage> {
               children: [
                 const Text(
                   'Internship Completed',
-                  style: TextStyle(color: NdmuColors.greenDark, fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: NdmuColors.greenDark,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 if (completedDate != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     'Confirmed by your coordinator on ${DateFormat('MMMM d, yyyy').format(completedDate)}',
-                    style: const TextStyle(color: NdmuColors.greenDark, fontSize: 12.5),
+                    style: const TextStyle(
+                      color: NdmuColors.greenDark,
+                      fontSize: 12.5,
+                    ),
                   ),
                 ],
               ],
@@ -690,17 +804,27 @@ class _StudentHomePageState extends State<StudentHomePage> {
         ),
         child: Row(
           children: [
-            Icon(Icons.business_outlined, color: Colors.grey.shade400, size: 26),
+            Icon(
+              Icons.business_outlined,
+              color: Colors.grey.shade400,
+              size: 26,
+            ),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('No HTE assigned yet', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text(
+                    'No HTE assigned yet',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 2),
                   Text(
                     "Your coordinator will assign your Host Training Establishment soon.",
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12.5),
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 12.5,
+                    ),
                   ),
                 ],
               ),
@@ -720,7 +844,11 @@ class _StudentHomePageState extends State<StudentHomePage> {
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: const [
-          BoxShadow(color: Color.fromRGBO(0, 0, 0, 0.1), blurRadius: 18, offset: Offset(0, 10)),
+          BoxShadow(
+            color: Color.fromRGBO(0, 0, 0, 0.1),
+            blurRadius: 18,
+            offset: Offset(0, 10),
+          ),
         ],
       ),
       child: Column(
@@ -728,24 +856,43 @@ class _StudentHomePageState extends State<StudentHomePage> {
         children: [
           const Text(
             'HOST TRAINING ESTABLISHMENT',
-            style: TextStyle(color: Colors.white70, fontSize: 11, letterSpacing: 0.6, fontWeight: FontWeight.w700),
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 11,
+              letterSpacing: 0.6,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             _hteName!,
-            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           if (_hteSupervisorName != null) ...[
             const SizedBox(height: 4),
-            Text('$_hteSupervisorName, Supervisor', style: const TextStyle(color: Colors.white70, fontSize: 13.5)),
+            Text(
+              '$_hteSupervisorName, Supervisor',
+              style: const TextStyle(color: Colors.white70, fontSize: 13.5),
+            ),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildHoursCard(BuildContext context, String tierLabel, Color tierColor, int remainingHours) {
-    final fraction = _targetHours > 0 ? (_hoursLogged / _targetHours).clamp(0.0, 1.0) : 0.0;
+  Widget _buildHoursCard(
+    BuildContext context,
+    String tierLabel,
+    Color tierColor,
+    int remainingHours,
+  ) {
+    final fraction = _targetHours > 0
+        ? (_hoursLogged / _targetHours).clamp(0.0, 1.0)
+        : 0.0;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -753,7 +900,11 @@ class _StudentHomePageState extends State<StudentHomePage> {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.grey.shade200),
         boxShadow: const [
-          BoxShadow(color: Color.fromRGBO(0, 0, 0, 0.04), blurRadius: 16, offset: Offset(0, 8)),
+          BoxShadow(
+            color: Color.fromRGBO(0, 0, 0, 0.04),
+            blurRadius: 16,
+            offset: Offset(0, 8),
+          ),
         ],
       ),
       child: Row(
@@ -774,20 +925,35 @@ class _StudentHomePageState extends State<StudentHomePage> {
                           tween: Tween(begin: 0, end: fraction),
                           duration: const Duration(milliseconds: 600),
                           curve: Curves.easeOutCubic,
-                          builder: (context, value, _) => CircularProgressIndicator(
-                            value: value,
-                            strokeWidth: 12,
-                            strokeCap: StrokeCap.round,
-                            backgroundColor: Colors.grey.shade200,
-                            valueColor: AlwaysStoppedAnimation<Color>(tierColor),
-                          ),
+                          builder: (context, value, _) =>
+                              CircularProgressIndicator(
+                                value: value,
+                                strokeWidth: 12,
+                                strokeCap: StrokeCap.round,
+                                backgroundColor: Colors.grey.shade200,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  tierColor,
+                                ),
+                              ),
                         ),
                 ),
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('$_hoursLogged', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                    Text('of $_targetHours hrs', style: TextStyle(fontSize: 10.5, color: Colors.grey.shade600)),
+                    Text(
+                      '$_hoursLogged',
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      'of $_targetHours hrs',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -798,16 +964,25 @@ class _StudentHomePageState extends State<StudentHomePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Hours Rendered', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Text(
+                  'Hours Rendered',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
                 const SizedBox(height: 4),
-                Text('$remainingHours hrs remaining', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                Text(
+                  '$remainingHours hrs remaining',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                ),
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: [
                     _StatusChip(label: tierLabel, color: tierColor),
-                    _StatusChip(label: '$_compliancePercent%', color: tierColor),
+                    _StatusChip(
+                      label: '$_compliancePercent%',
+                      color: tierColor,
+                    ),
                   ],
                 ),
               ],
@@ -893,14 +1068,21 @@ class _DesktopSidebar extends StatelessWidget {
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(12)),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: const Icon(Icons.school, color: Colors.white, size: 22),
               ),
               const SizedBox(width: 10),
               const Expanded(
                 child: Text(
                   'OJTrack',
-                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -909,13 +1091,20 @@ class _DesktopSidebar extends StatelessWidget {
             padding: EdgeInsets.only(left: 2, top: 2),
             child: Text(
               'Student Portal',
-              style: TextStyle(color: Colors.white54, fontSize: 11.5, letterSpacing: 0.3),
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 11.5,
+                letterSpacing: 0.3,
+              ),
             ),
           ),
           const SizedBox(height: 28),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 2),
-            child: Text('Welcome back', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            child: Text(
+              'Welcome back',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -923,28 +1112,46 @@ class _DesktopSidebar extends StatelessWidget {
               displayName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           const SizedBox(height: 24),
-          for (var i = 0; i < _destinations.length; i++) _buildDestination(context, i),
+          for (var i = 0; i < _destinations.length; i++)
+            _buildDestination(context, i),
           const Spacer(),
           const Divider(color: Colors.white24, height: 1),
           const SizedBox(height: 8),
           if (onProfile != null)
             TextButton.icon(
               onPressed: onProfile,
-              icon: const Icon(Icons.person_outline, color: Colors.white70, size: 18),
-              label: const Text('Profile', style: TextStyle(color: Colors.white70)),
+              icon: const Icon(
+                Icons.person_outline,
+                color: Colors.white70,
+                size: 18,
+              ),
+              label: const Text(
+                'Profile',
+                style: TextStyle(color: Colors.white70),
+              ),
               style: TextButton.styleFrom(
                 alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 10,
+                ),
               ),
             ),
           TextButton.icon(
             onPressed: onLogout,
             icon: const Icon(Icons.logout, color: Colors.white70, size: 18),
-            label: const Text('Logout', style: TextStyle(color: Colors.white70)),
+            label: const Text(
+              'Logout',
+              style: TextStyle(color: Colors.white70),
+            ),
             style: TextButton.styleFrom(
               alignment: Alignment.centerLeft,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
@@ -970,7 +1177,11 @@ class _DesktopSidebar extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
             child: Row(
               children: [
-                Icon(selected ? filledIcon : outlineIcon, color: Colors.white, size: 20),
+                Icon(
+                  selected ? filledIcon : outlineIcon,
+                  color: Colors.white,
+                  size: 20,
+                ),
                 const SizedBox(width: 12),
                 Text(
                   label,
@@ -1023,7 +1234,11 @@ class _QuickActionButton extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 label,
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: color),
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12.5,
+                  color: color,
+                ),
               ),
             ],
           ),
@@ -1047,7 +1262,14 @@ class _StatusChip extends StatelessWidget {
         color: color.withAlpha((0.14 * 255).round()),
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12.5)),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w700,
+          fontSize: 12.5,
+        ),
+      ),
     );
   }
 }

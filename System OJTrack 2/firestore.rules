@@ -7,16 +7,25 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Guarded by exists() so a client whose sign-in event fires just before
+    // its own users/{uid} doc finishes writing (a real race right after
+    // self-registration) gets a clean "not yet a student/coordinator"
+    // instead of a rules-evaluation crash (get().data on a missing doc
+    // throws, rather than denying).
+    function hasUserData() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
     function isCoordinator() {
-      return isSignedIn() && (getUserData().role == 'coordinator' || getUserData().role == 'admin');
+      return hasUserData() && (getUserData().role == 'coordinator' || getUserData().role == 'admin');
     }
 
     function isStudent() {
-      return isSignedIn() && getUserData().role == 'student';
+      return hasUserData() && getUserData().role == 'student';
     }
 
     // User profiles
@@ -112,7 +121,14 @@ service cloud.firestore {
     // Notifications
     match /notifications/{notifId} {
       allow read: if isSignedIn() && resource.data.recipientId == request.auth.uid;
-      allow write: if isCoordinator();
+      allow create: if isCoordinator();
+      // A student can only ever flip their own notification's `read` flag —
+      // not touch the message/type/etc. Coordinators keep full write access
+      // (they also mark their own notifications read from the web app).
+      allow update: if isCoordinator() ||
+                    (isSignedIn() && resource.data.recipientId == request.auth.uid &&
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']));
+      allow delete: if isCoordinator();
     }
 
     // System preferences (single doc: settings/global)

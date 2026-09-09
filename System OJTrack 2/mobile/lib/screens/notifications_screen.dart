@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../theme/ndmu_theme.dart';
 import '../utils/notification_helpers.dart';
 import '../widgets/empty_state.dart';
+import 'messages_screen.dart';
 
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
@@ -72,6 +73,12 @@ class NotificationsScreen extends StatelessWidget {
                         onTap: () {
                           if (!read) {
                             FirebaseFirestore.instance.collection('notifications').doc(doc.id).update({'read': true});
+                          }
+                          if (data['type'] == 'coordinator_feedback') {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const MessagesScreen()),
+                            );
                           }
                         },
                       ),
