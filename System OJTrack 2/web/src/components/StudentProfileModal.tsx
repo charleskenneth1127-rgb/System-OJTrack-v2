@@ -87,7 +87,7 @@ const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
 
         <div className="modal-body">
           <div className="profile-identity">
-            <Avatar name={name} photoUrl={studentUser?.photoUrl} seed={student.userId} size={52} />
+            <Avatar name={name} photoUrl={studentUser?.photoUrl} seed={student.userId} size={84} />
             <div>
               <strong className="profile-name">{name}</strong>
               <span className="mono profile-id">{studentUser?.studentIdCode || studentUser?.email || student.userId}</span>
