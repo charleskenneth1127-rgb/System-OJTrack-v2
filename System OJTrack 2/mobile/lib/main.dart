@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -246,6 +247,8 @@ class _StudentHomePageState extends State<StudentHomePage> {
   String? _hteName;
   String? _hteSupervisorName;
   String? _lastAssignedHteId;
+  String? _completionStatus;
+  String? _completedAt;
 
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _studentSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _hteSub;
@@ -307,6 +310,8 @@ class _StudentHomePageState extends State<StudentHomePage> {
         _hoursLogged = renderedHours;
         _compliancePercent = _targetHours > 0 ? min(100, (_hoursLogged * 100 ~/ _targetHours)) : 0;
         _loadingMetrics = false;
+        _completionStatus = data['completionStatus'] as String?;
+        _completedAt = data['completedAt'] as String?;
       });
 
       // Re-subscribe to the assigned HTE only when it actually changes, so a
@@ -586,6 +591,10 @@ class _StudentHomePageState extends State<StudentHomePage> {
         style: TextStyle(color: Colors.grey.shade600, fontSize: 14.5),
       ),
       const SizedBox(height: 20),
+      if (_completionStatus == 'completed') ...[
+        _buildCompletionBanner(),
+        const SizedBox(height: 16),
+      ],
       _buildHteCard(context),
       const SizedBox(height: 16),
       _buildHoursCard(context, tierLabel, tierColor, remainingHours),
@@ -626,6 +635,48 @@ class _StudentHomePageState extends State<StudentHomePage> {
         ],
       ),
     ];
+  }
+
+  Widget _buildCompletionBanner() {
+    final completedDate = _completedAt != null ? DateTime.tryParse(_completedAt!) : null;
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [NdmuColors.gold, NdmuColors.goldLight],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: const [
+          BoxShadow(color: Color.fromRGBO(0, 0, 0, 0.1), blurRadius: 18, offset: Offset(0, 10)),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.school, color: NdmuColors.greenDark, size: 30),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Internship Completed',
+                  style: TextStyle(color: NdmuColors.greenDark, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                if (completedDate != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Confirmed by your coordinator on ${DateFormat('MMMM d, yyyy').format(completedDate)}',
+                    style: const TextStyle(color: NdmuColors.greenDark, fontSize: 12.5),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildHteCard(BuildContext context) {

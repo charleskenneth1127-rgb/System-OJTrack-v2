@@ -325,7 +325,21 @@ button:disabled {
 
 nav {
   display: grid;
+  gap: 14px;
+}
+
+.nav-group {
+  display: grid;
   gap: 3px;
+}
+
+.nav-group-label {
+  padding: 0 14px 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(220, 239, 224, 0.5);
 }
 
 .nav-button {

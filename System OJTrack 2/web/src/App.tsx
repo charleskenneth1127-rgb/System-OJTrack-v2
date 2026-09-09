@@ -57,16 +57,20 @@ import {
   where,
 } from 'firebase/firestore'
 
-const modules = [
-  'Dashboard',
-  'Class Management',
-  'Enroll HTE',
-  'HTE Evaluation Results',
-  'Final Assessment & Completion',
-  'SIPP/CHED Report Generation',
-  'Activity Log',
-  'Settings/Profile',
+// Grouped for the sidebar so a first-time coordinator isn't scanning eight
+// flat items — Monitoring (read/track), Management (create/edit/act), System
+// (accounts, settings, audit). Activity Log sits under System rather than
+// Monitoring to match the paper's own System Administration Module, which
+// bundles account management, settings, and activity logs together.
+const moduleGroups: { label: string; items: string[] }[] = [
+  { label: 'Monitoring', items: ['Dashboard', 'HTE Evaluation Results'] },
+  {
+    label: 'Management',
+    items: ['Class Management', 'Enroll HTE', 'Final Assessment & Completion', 'SIPP/CHED Report Generation'],
+  },
+  { label: 'System', items: ['Activity Log', 'Settings/Profile'] },
 ]
+const modules = moduleGroups.flatMap((group) => group.items)
 
 // One small stroke icon per sidebar module — same hand-drawn style already
 // used for the topbar's theme toggle / notification bell, kept as plain
@@ -2507,15 +2511,20 @@ function App() {
           <p>College of Engineering, Architecture and Computing</p>
         </div>
         <nav>
-          {modules.map((module) => (
-            <button
-              key={module}
-              className={selectedModule === module ? 'nav-button active' : 'nav-button'}
-              onClick={() => setSelectedModule(module)}
-            >
-              <span className="nav-button-icon">{moduleIcons[module]}</span>
-              <span>{module}</span>
-            </button>
+          {moduleGroups.map((group) => (
+            <div className="nav-group" key={group.label}>
+              <span className="nav-group-label">{group.label}</span>
+              {group.items.map((module) => (
+                <button
+                  key={module}
+                  className={selectedModule === module ? 'nav-button active' : 'nav-button'}
+                  onClick={() => setSelectedModule(module)}
+                >
+                  <span className="nav-button-icon">{moduleIcons[module]}</span>
+                  <span>{module}</span>
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar-footer">
