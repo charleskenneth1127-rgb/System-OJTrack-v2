@@ -103,6 +103,8 @@ service cloud.firestore {
     match /portfolio_items/{itemId} {
       allow read: if isCoordinator() || (isStudent() && resource.data.studentId == request.auth.uid);
       allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+      // Coordinators review (approve/reject + note); students may only delete their own.
+      allow update: if isCoordinator();
       allow delete: if isStudent() && resource.data.studentId == request.auth.uid;
     }
 

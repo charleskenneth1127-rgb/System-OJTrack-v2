@@ -65,6 +65,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
         'title': title,
         'fileUrl': fileUrl,
         'uploadedAt': FieldValue.serverTimestamp(),
+        'status': 'pending',
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Added to your portfolio')));
@@ -99,7 +100,41 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               'Collect your best work, achievements, and reflections for review.',
               style: TextStyle(color: Colors.grey),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 14),
+            StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance.collection('settings').doc('global').snapshots(),
+              builder: (context, snapshot) {
+                final instructions = snapshot.data?.data()?['portfolioInstructions'] as String?;
+                if (instructions == null || instructions.trim().isEmpty) return const SizedBox.shrink();
+                return Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: NdmuColors.gold.withAlpha((0.12 * 255).round()),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: NdmuColors.gold.withAlpha((0.4 * 255).round())),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: const [
+                          Icon(Icons.info_outline, size: 16, color: NdmuColors.greenDark),
+                          SizedBox(width: 6),
+                          Text(
+                            'What your coordinator wants to see',
+                            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5, color: NdmuColors.greenDark),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(instructions, style: const TextStyle(fontSize: 13.5)),
+                    ],
+                  ),
+                );
+              },
+            ),
             Expanded(
               child: user == null
                   ? const Center(child: Text('Sign in to view your portfolio.'))
@@ -138,16 +173,39 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                             final data = doc.data() as Map<String, dynamic>;
                             final title = (data['title'] as String?) ?? 'Untitled';
                             final fileUrl = data['fileUrl'] as String?;
+                            final status = (data['status'] as String?) ?? 'pending';
+                            final coordinatorNote = data['coordinatorNote'] as String?;
                             return Card(
                               child: ListTile(
                                 title: Text(title),
-                                subtitle: const Text('Tap to view'),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const SizedBox(height: 4),
+                                    const Text('Tap to view', style: TextStyle(fontSize: 12)),
+                                    if (status == 'rejected' && coordinatorNote != null && coordinatorNote.trim().isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Coordinator: $coordinatorNote',
+                                        style: const TextStyle(fontSize: 12, color: Colors.redAccent),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                isThreeLine: status == 'rejected' && coordinatorNote != null && coordinatorNote.trim().isNotEmpty,
                                 onTap: fileUrl == null
                                     ? null
                                     : () => launchUrl(Uri.parse(fileUrl), mode: LaunchMode.externalApplication),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                                  onPressed: () => _deleteItem(doc.id),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    StatusBadge(status: status),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                      onPressed: () => _deleteItem(doc.id),
+                                    ),
+                                  ],
                                 ),
                               ),
                             );

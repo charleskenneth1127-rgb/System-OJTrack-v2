@@ -106,6 +106,9 @@ export interface PortfolioItemRecord {
   fileUrl: string
   title: string
   uploadedAt: any // Firestore Timestamp
+  status: 'pending' | 'approved' | 'rejected'
+  /** Coordinator's note on why an item was rejected / what to fix — shown back to the student. */
+  coordinatorNote?: string
 }
 
 export interface HteEvaluationLinkRecord {
@@ -137,6 +140,8 @@ export interface SystemPreferencesRecord {
   absenceAlertThresholdDays: number
   /** Grace period after an HTE's expectedTimeIn before a time-in log is marked late. */
   lateThresholdMinutes: number
+  /** Shown to students on the mobile Portfolio screen so they know what's expected before they upload. */
+  portfolioInstructions: string
 }
 
 /** An immutable audit trail entry — see the Activity Log under System Administration. */

@@ -10,8 +10,12 @@ export interface ReviewRow {
   content?: string
   fileUrl?: string
   fileLinkLabel?: string
+  /** Shown back to the student when status is 'rejected' — what to fix. */
+  coordinatorNote?: string
   onApprove?: () => void
   onReject?: () => void
+  /** When set, Reject opens a small note prompt and calls this with the note instead of onReject — used where the student needs to know what to fix (e.g. Portfolio). */
+  onRejectWithNote?: (note: string) => void
 }
 
 interface ReviewRowListProps {
@@ -44,6 +48,23 @@ const getFileExtension = (url: string): string => {
 const ReviewRowList: React.FC<ReviewRowListProps> = ({ title, subtitle, emptyTitle, emptySubtitle, items }) => {
   const [filter, setFilter] = useState<Filter>('all')
   const [viewing, setViewing] = useState<ReviewRow | null>(null)
+  const [rejectingNoteFor, setRejectingNoteFor] = useState<ReviewRow | null>(null)
+  const [noteText, setNoteText] = useState('')
+
+  const startReject = (item: ReviewRow) => {
+    if (item.onRejectWithNote) {
+      setRejectingNoteFor(item)
+      setNoteText('')
+    } else {
+      item.onReject?.()
+    }
+  }
+
+  const confirmRejectWithNote = () => {
+    rejectingNoteFor?.onRejectWithNote?.(noteText.trim())
+    setRejectingNoteFor(null)
+    setViewing(null)
+  }
 
   const counts = useMemo(
     () => ({
@@ -109,9 +130,9 @@ const ReviewRowList: React.FC<ReviewRowListProps> = ({ title, subtitle, emptyTit
                     <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
                   </svg>
                 </button>
-                {item.status === 'pending' && item.onApprove && item.onReject && (
+                {item.status === 'pending' && item.onApprove && (item.onReject || item.onRejectWithNote) && (
                   <>
-                    <button className="reject-button" onClick={item.onReject}>
+                    <button className="reject-button" onClick={() => startReject(item)}>
                       Reject
                     </button>
                     <button className="primary-button" onClick={item.onApprove}>
@@ -141,6 +162,12 @@ const ReviewRowList: React.FC<ReviewRowListProps> = ({ title, subtitle, emptyTit
             </div>
             <div className="modal-body">
               <span className={`status-badge status-${viewing.status}`}>{viewing.status}</span>
+              {viewing.status === 'rejected' && viewing.coordinatorNote && (
+                <p className="review-content">
+                  <strong>Note: </strong>
+                  {viewing.coordinatorNote}
+                </p>
+              )}
               {viewing.content && <p className="review-content">{viewing.content}</p>}
               {viewing.fileUrl &&
                 (() => {
@@ -165,15 +192,9 @@ const ReviewRowList: React.FC<ReviewRowListProps> = ({ title, subtitle, emptyTit
               {!viewing.content && !viewing.fileUrl && <p className="modal-hint">No additional details attached.</p>}
             </div>
             <div className="modal-footer">
-              {viewing.status === 'pending' && viewing.onApprove && viewing.onReject ? (
+              {viewing.status === 'pending' && viewing.onApprove && (viewing.onReject || viewing.onRejectWithNote) ? (
                 <>
-                  <button
-                    className="reject-button"
-                    onClick={() => {
-                      viewing.onReject?.()
-                      setViewing(null)
-                    }}
-                  >
+                  <button className="reject-button" onClick={() => startReject(viewing)}>
                     Reject
                   </button>
                   <button
@@ -191,6 +212,39 @@ const ReviewRowList: React.FC<ReviewRowListProps> = ({ title, subtitle, emptyTit
                   Close
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {rejectingNoteFor && (
+        <div className="modal-overlay" onClick={() => setRejectingNoteFor(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Reject "{rejectingNoteFor.typeLabel}"?</h3>
+              <button className="modal-close" onClick={() => setRejectingNoteFor(null)} aria-label="Close">
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">
+              <label className="modal-field">
+                What should {rejectingNoteFor.studentLabel} fix? (optional, but helpful)
+                <textarea
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  placeholder="e.g. Please include a reflection write-up, not just the certificate."
+                  rows={3}
+                  autoFocus
+                />
+              </label>
+            </div>
+            <div className="modal-footer">
+              <button className="secondary-button" onClick={() => setRejectingNoteFor(null)}>
+                Cancel
+              </button>
+              <button className="reject-button" onClick={confirmRejectWithNote}>
+                Reject
+              </button>
             </div>
           </div>
         </div>

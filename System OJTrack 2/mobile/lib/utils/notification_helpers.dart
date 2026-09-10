@@ -30,6 +30,8 @@ String notificationTitle(String? type) {
       return 'Attendance issue';
     case 'absence':
       return 'Absence recorded';
+    case 'portfolio_review':
+      return 'Portfolio reviewed';
     default:
       return 'Notification';
   }

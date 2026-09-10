@@ -28,6 +28,7 @@ import type {
   NotificationRecord,
   ReportRecord,
   PreOjtDocumentRecord,
+  PortfolioItemRecord,
   AttendanceLogRecord,
   HteEvaluationLinkRecord,
   HteEvaluationRecord,
@@ -141,7 +142,7 @@ const moduleIcons: Record<string, React.ReactNode> = {
   ),
 }
 
-type ClassTab = 'members' | 'attendance' | 'reports'
+type ClassTab = 'members' | 'attendance' | 'reports' | 'portfolio'
 
 const initialClasses: ClassRecord[] = [
   { id: 'class-1', name: 'BSIT 4A', coordinatorId: 'coord-1', schoolYear: '2025-2026', term: '2nd Semester', requiredHours: 600, joinCode: 'DEMO01' },
@@ -201,6 +202,7 @@ const DEFAULT_PREFERENCES: SystemPreferencesRecord = {
   semester: '2nd Semester',
   absenceAlertThresholdDays: 2,
   lateThresholdMinutes: 15,
+  portfolioInstructions: '',
 }
 
 const initialCoordinators: Record<string, UserRecord> = {}
@@ -266,6 +268,8 @@ const initialPreOjtDocuments: PreOjtDocumentRecord[] = [
   },
 ]
 
+const initialPortfolioItems: PortfolioItemRecord[] = []
+
 const initialAttendanceLogs: AttendanceLogRecord[] = [
   {
     id: 'log-1',
@@ -326,6 +330,7 @@ function App() {
   const [coordinators, setCoordinators] = useState<Record<string, UserRecord>>(initialCoordinators)
   const [reports, setReports] = useState<ReportRecord[]>(initialReports)
   const [preOjtDocuments, setPreOjtDocuments] = useState<PreOjtDocumentRecord[]>(initialPreOjtDocuments)
+  const [portfolioItems, setPortfolioItems] = useState<PortfolioItemRecord[]>(initialPortfolioItems)
   const [attendanceLogs, setAttendanceLogs] = useState<AttendanceLogRecord[]>(initialAttendanceLogs)
   const [hteEvaluationLinks, setHteEvaluationLinks] = useState<HteEvaluationLinkRecord[]>(initialHteEvaluationLinks)
   const [hteEvaluations, setHteEvaluations] = useState<HteEvaluationRecord[]>(initialHteEvaluations)
@@ -510,6 +515,18 @@ function App() {
       onSyncError('documents'),
     )
 
+    const portfolioUnsubscribe = onSnapshot(
+      collection(db, 'portfolio_items'),
+      (snapshot) => {
+        const loadedPortfolioItems = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...(docSnap.data() as Omit<PortfolioItemRecord, 'id'>),
+        }))
+        setPortfolioItems(loadedPortfolioItems)
+      },
+      onSyncError('portfolio'),
+    )
+
     const attendanceUnsubscribe = onSnapshot(
       collection(db, 'attendance_logs'),
       (snapshot) => {
@@ -581,6 +598,7 @@ function App() {
       coordinatorsUnsubscribe()
       reportsUnsubscribe()
       documentsUnsubscribe()
+      portfolioUnsubscribe()
       attendanceUnsubscribe()
       hteLinksUnsubscribe()
       hteEvaluationsUnsubscribe()
@@ -804,6 +822,29 @@ function App() {
       }
     }
     if (document) await markStudentNotificationsRead(document.studentId, ['document'])
+  }
+
+  const updatePortfolioItemStatus = async (itemId: string, status: 'approved' | 'rejected', coordinatorNote?: string) => {
+    const item = portfolioItems.find((i) => i.id === itemId)
+    setPortfolioItems((current) =>
+      current.map((i) => (i.id === itemId ? { ...i, status, ...(coordinatorNote ? { coordinatorNote } : {}) } : i)),
+    )
+    if (user) {
+      try {
+        await updateDoc(doc(db, 'portfolio_items', itemId), {
+          status,
+          ...(coordinatorNote ? { coordinatorNote } : {}),
+        })
+        const name = item ? users[item.studentId]?.displayName || item.studentId : itemId
+        logActivity(
+          `portfolio_${status}`,
+          `${status === 'approved' ? 'Approved' : 'Rejected'} ${name}'s portfolio item "${item?.title || ''}".`,
+        )
+      } catch (error) {
+        console.error('Failed to update portfolio item status:', error)
+      }
+    }
+    if (item) await markStudentNotificationsRead(item.studentId, ['portfolio'])
   }
 
   const markStudentCompleted = async (studentId: string) => {
@@ -1425,6 +1466,7 @@ function App() {
       { key: 'members', label: 'Members' },
       { key: 'attendance', label: 'Attendance & Compliance' },
       { key: 'reports', label: 'Reports & Documents' },
+      { key: 'portfolio', label: 'Portfolio' },
     ]
 
     return (
@@ -1462,6 +1504,7 @@ function App() {
         {classTab === 'members' && renderClassMembersTab(classItem, classStudents)}
         {classTab === 'attendance' && renderClassAttendanceTab(classItem, classStudents)}
         {classTab === 'reports' && renderClassReportsTab(classStudents)}
+        {classTab === 'portfolio' && renderClassPortfolioTab(classStudents)}
       </div>
     )
   }
@@ -1905,6 +1948,45 @@ function App() {
           emptyTitle="No documents submitted yet"
           emptySubtitle="MOA, waivers, and other onboarding documents from students will show up here."
           items={documentRows}
+        />
+      </div>
+    )
+  }
+
+  const renderClassPortfolioTab = (classStudents: StudentRecord[]) => {
+    const classStudentIds = new Set(classStudents.map((s) => s.userId))
+    const sortedPortfolioItems = [...portfolioItems]
+      .filter((item) => classStudentIds.has(item.studentId))
+      .sort((a, b) => new Date(formatTimestamp(b.uploadedAt) || 0).getTime() - new Date(formatTimestamp(a.uploadedAt) || 0).getTime())
+
+    const portfolioRows: ReviewRow[] = sortedPortfolioItems.map((item) => ({
+      id: item.id,
+      studentLabel: users[item.studentId]?.displayName || users[item.studentId]?.studentIdCode || item.studentId,
+      typeLabel: item.title,
+      status: item.status,
+      submittedLabel: `Uploaded ${formatTimestamp(item.uploadedAt) || 'on an unknown date'}`,
+      fileUrl: item.fileUrl,
+      fileLinkLabel: 'View item',
+      coordinatorNote: item.coordinatorNote,
+      onApprove: () => updatePortfolioItemStatus(item.id, 'approved'),
+      onRejectWithNote: (note) => updatePortfolioItemStatus(item.id, 'rejected', note || undefined),
+    }))
+
+    return (
+      <div className="module-grid">
+        {preferences.portfolioInstructions.trim() && (
+          <div className="module-card">
+            <h3>Portfolio instructions given to students</h3>
+            <p className="review-content">{preferences.portfolioInstructions}</p>
+            <p className="modal-hint">Edit this under Settings → System Preferences.</p>
+          </div>
+        )}
+        <ReviewRowList
+          title="Student portfolios"
+          subtitle="Review each item against your portfolio instructions — approve it, or reject it with a note on what to fix."
+          emptyTitle="No portfolio items yet"
+          emptySubtitle="Items students add to their portfolio will show up here."
+          items={portfolioRows}
         />
       </div>
     )
@@ -2397,6 +2479,18 @@ function App() {
             These defaults are used when creating a new class. The absence alert threshold controls how many
             consecutive no-time-in days trigger a coordinator notification, and the late grace period is how many
             minutes past an HTE's expected time-in (set per HTE under Enroll HTE) before a time-in is marked late.
+          </p>
+          <label className="modal-field">
+            Portfolio instructions
+            <textarea
+              value={preferences.portfolioInstructions}
+              onChange={(e) => updatePreferencesField('portfolioInstructions', e.target.value)}
+              placeholder="e.g. Include your certificate of completion, a one-page reflection, and at least 3 work samples."
+              rows={3}
+            />
+          </label>
+          <p className="modal-hint">
+            Shown to students on their mobile Portfolio screen, so they know what to include before you review it.
           </p>
           <button className="primary-button" onClick={handleSavePreferences} disabled={savingPreferences}>
             {savingPreferences ? 'Saving…' : 'Save Changes'}

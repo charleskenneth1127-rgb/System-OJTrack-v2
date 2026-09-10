@@ -9,6 +9,7 @@ import '../widgets/stream_error.dart';
 import 'attendance_screen.dart';
 import 'documents_screen.dart';
 import 'messages_screen.dart';
+import 'portfolio_screen.dart';
 import 'reports_screen.dart';
 
 class NotificationsScreen extends StatelessWidget {
@@ -38,6 +39,9 @@ class NotificationsScreen extends StatelessWidget {
       case 'document_review':
       case 'incomplete_requirements':
         Navigator.push(context, MaterialPageRoute(builder: (_) => const DocumentsScreen()));
+        return;
+      case 'portfolio_review':
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const PortfolioScreen()));
         return;
       case 'internship_completed':
       case 'class_join_approved':
