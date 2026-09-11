@@ -722,16 +722,82 @@ class _StudentHomePageState extends State<StudentHomePage> {
             onLogout: _logout,
           ),
           Expanded(
-            child: IndexedStack(
-              index: _selectedIndex,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildDesktopHomePane(context),
-                _tabContent(1),
-                _tabContent(2),
-                _tabContent(3),
-                _tabContent(4),
+                _buildDesktopTopBar(context),
+                Expanded(
+                  child: IndexedStack(
+                    index: _selectedIndex,
+                    children: [
+                      _buildDesktopHomePane(context),
+                      _tabContent(1),
+                      _tabContent(2),
+                      _tabContent(3),
+                      _tabContent(4),
+                    ],
+                  ),
+                ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The phone layout's AppBar carries the theme toggle and notification
+  /// bell, but the desktop layout (sidebar + content, no AppBar at all) has
+  /// nowhere for either to live — this is that home, kept as a slim strip
+  /// above the content rather than a full AppBar since the sidebar already
+  /// covers navigation/profile/logout.
+  Widget _buildDesktopTopBar(BuildContext context) {
+    return Container(
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          ValueListenableBuilder<ThemeMode>(
+            valueListenable: themeController,
+            builder: (context, mode, _) {
+              final isDark = mode == ThemeMode.dark ||
+                  (mode == ThemeMode.system && MediaQuery.platformBrightnessOf(context) == Brightness.dark);
+              return IconButton(
+                icon: Icon(isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+                tooltip: isDark ? 'Switch to light mode' : 'Switch to dark mode',
+                onPressed: () => themeController.toggle(context),
+              );
+            },
+          ),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications_outlined),
+                tooltip: 'Notifications',
+                onPressed: widget.demoMode ? null : () => _openNotifications(context),
+              ),
+              if (_unreadCount > 0)
+                Positioned(
+                  right: 6,
+                  top: 6,
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
+                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    child: Text(
+                      _unreadCount > 9 ? '9+' : '$_unreadCount',
+                      style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ],
       ),
