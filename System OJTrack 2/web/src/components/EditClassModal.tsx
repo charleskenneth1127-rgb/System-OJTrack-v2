@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import type { ClassRecord } from '../types'
-import { TERM_OPTIONS } from '../constants'
+import { TERM_OPTIONS, schoolYearOptions } from '../constants'
 
 interface EditClassModalProps {
   classItem: ClassRecord
@@ -15,6 +15,7 @@ const EditClassModal: React.FC<EditClassModalProps> = ({ classItem, studentCount
   const [schoolYear, setSchoolYear] = useState(classItem.schoolYear)
   const [term, setTerm] = useState(classItem.term)
   const [requiredHours, setRequiredHours] = useState(String(classItem.requiredHours))
+  const [yearOptions] = useState(() => schoolYearOptions(classItem.schoolYear))
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -85,7 +86,13 @@ const EditClassModal: React.FC<EditClassModalProps> = ({ classItem, studentCount
               </label>
               <label className="modal-field">
                 School year
-                <input value={schoolYear} onChange={(e) => setSchoolYear(e.target.value)} />
+                <select value={schoolYear} onChange={(e) => setSchoolYear(e.target.value)}>
+                  {yearOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="modal-field">
                 Term

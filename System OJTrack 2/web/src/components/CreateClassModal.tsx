@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { TERM_OPTIONS } from '../constants'
+import { TERM_OPTIONS, schoolYearOptions } from '../constants'
 
 interface CreateClassModalProps {
   onClose: () => void
@@ -14,6 +14,7 @@ const CreateClassModal: React.FC<CreateClassModalProps> = ({ onClose, onCreate, 
   const [requiredHours, setRequiredHours] = useState(String(defaults?.requiredHours ?? 600))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [yearOptions] = useState(() => schoolYearOptions(defaults?.schoolYear))
 
   const parsedHours = Number(requiredHours)
   const isValid = name.trim() !== '' && schoolYear.trim() !== '' && term.trim() !== '' && !Number.isNaN(parsedHours) && parsedHours >= 0
@@ -56,7 +57,13 @@ const CreateClassModal: React.FC<CreateClassModalProps> = ({ onClose, onCreate, 
           </label>
           <label className="modal-field">
             School year
-            <input value={schoolYear} onChange={(e) => setSchoolYear(e.target.value)} />
+            <select value={schoolYear} onChange={(e) => setSchoolYear(e.target.value)}>
+              {yearOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="modal-field">
             Term

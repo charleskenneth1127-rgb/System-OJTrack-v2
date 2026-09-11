@@ -40,7 +40,7 @@ import { resizeImageFile } from './utils/imageResize'
 import { isLate } from './utils/attendance'
 import { registerPushNotifications } from './push'
 import { avatarColor, classCardStyle, initials } from './utils/avatarStyle'
-import { TERM_OPTIONS } from './constants'
+import { TERM_OPTIONS, schoolYearOptions } from './constants'
 import { onAuthStateChanged } from 'firebase/auth'
 import {
   addDoc,
@@ -2968,7 +2968,16 @@ function App() {
             </label>
             <label className="preferences-row">
               <span className="preferences-label">Academic Year</span>
-              <input value={preferences.academicYear} onChange={(e) => updatePreferencesField('academicYear', e.target.value)} />
+              <select
+                value={preferences.academicYear}
+                onChange={(e) => updatePreferencesField('academicYear', e.target.value)}
+              >
+                {schoolYearOptions(preferences.academicYear).map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="preferences-row">
               <span className="preferences-label">Semester</span>
