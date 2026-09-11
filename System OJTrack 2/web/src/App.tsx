@@ -366,6 +366,9 @@ function App() {
   const [sendingStudentFeedback, setSendingStudentFeedback] = useState(false)
   const [studentFeedbackSent, setStudentFeedbackSent] = useState(false)
   const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'present' | 'pending' | 'absent'>('all')
+  const [sippClassFilter, setSippClassFilter] = useState<string>('all')
+  const [sippStudentFilter, setSippStudentFilter] = useState<string>('all')
+  const [sippPeriod, setSippPeriod] = useState<'all' | 'daily' | 'weekly' | 'monthly'>('all')
   const [viewingAttendanceDay, setViewingAttendanceDay] = useState<StudentRecord | null>(null)
   const [newHteName, setNewHteName] = useState('')
   const [newHteAddress, setNewHteAddress] = useState('')
@@ -1122,10 +1125,45 @@ function App() {
     setEditingStudent(null)
   }
 
-  const sippReportRows = () =>
-    students.map((s) => {
+  /** The date window a Daily/Weekly/Monthly SIPP report covers — "All time" uses the student's running total instead. */
+  const sippPeriodRange = (): { start: Date; label: string } => {
+    const now = new Date()
+    const start = new Date(now)
+    if (sippPeriod === 'daily') {
+      start.setHours(0, 0, 0, 0)
+      return { start, label: `Daily — ${start.toLocaleDateString()}` }
+    }
+    if (sippPeriod === 'weekly') {
+      start.setDate(start.getDate() - 7)
+      return { start, label: `Weekly — ${start.toLocaleDateString()} to ${now.toLocaleDateString()}` }
+    }
+    if (sippPeriod === 'monthly') {
+      start.setMonth(start.getMonth() - 1)
+      return { start, label: `Monthly — ${start.toLocaleDateString()} to ${now.toLocaleDateString()}` }
+    }
+    start.setFullYear(2000)
+    return { start, label: 'All time' }
+  }
+
+  /** Students eligible for the SIPP report given the current Block/Student pickers — the student picker's own
+   * options come from this too, so it always narrows correctly when the block changes. */
+  const sippEligibleStudents = () =>
+    students
+      .filter((s) => sippClassFilter === 'all' || s.classId === sippClassFilter)
+      .filter((s) => sippStudentFilter === 'all' || s.id === sippStudentFilter)
+
+  const sippReportRows = () => {
+    const { start } = sippPeriodRange()
+    return sippEligibleStudents().map((s) => {
       const cls = classes.find((c) => c.id === s.classId)
       const hte = htes.find((h) => h.id === s.assignedHteId)
+      const periodHours =
+        sippPeriod === 'all'
+          ? s.renderedHours
+          : attendanceLogs
+              .filter((log) => log.studentId === s.userId && log.type === 'time_out' && log.status === 'verified')
+              .filter((log) => new Date(formatTimestamp(log.timestamp) || 0) >= start)
+              .reduce((sum, log) => sum + (log.computedHours || 0), 0)
       return {
         studentId: users[s.userId]?.studentIdCode || s.userId,
         name: users[s.userId]?.displayName || '',
@@ -1136,12 +1174,25 @@ function App() {
         supervisorContact: [hte?.supervisorEmail, hte?.supervisorPhone].filter(Boolean).join(' / '),
         requiredHours: s.requiredHours,
         renderedHours: s.renderedHours,
+        periodHours: Math.round(periodHours * 100) / 100,
         status: s.completionStatus === 'completed' ? 'Completed' : 'In Progress',
         completedAt: s.completedAt ? new Date(s.completedAt).toLocaleDateString() : '',
       }
     })
+  }
+
+  /** "BSIT-4B · Juan Dela Cruz" / "All Blocks · All Students" — the header line describing what's in this export. */
+  const sippScopeLabel = (): string => {
+    const blockLabel = sippClassFilter === 'all' ? 'All Blocks' : classes.find((c) => c.id === sippClassFilter)?.name || 'Block'
+    const studentLabel =
+      sippStudentFilter === 'all'
+        ? 'All Students'
+        : users[students.find((s) => s.id === sippStudentFilter)?.userId || '']?.displayName || 'Student'
+    return `${blockLabel} · ${studentLabel}`
+  }
 
   const exportCsv = () => {
+    const { label: periodLabel } = sippPeriodRange()
     const header = [
       'Student ID',
       'Name',
@@ -1151,7 +1202,8 @@ function App() {
       'Supervisor Name',
       'Supervisor Contact',
       'Required Hours',
-      'Rendered Hours',
+      'Total Rendered Hours',
+      `Hours (${periodLabel})`,
       'Status',
       'Completion Date',
     ]
@@ -1165,6 +1217,7 @@ function App() {
       r.supervisorContact,
       String(r.requiredHours),
       String(r.renderedHours),
+      String(r.periodHours),
       r.status,
       r.completedAt,
     ])
@@ -1175,12 +1228,13 @@ function App() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `ojtrack-sipp-report-${new Date().toISOString().slice(0, 10)}.csv`
+    link.download = `ojtrack-sipp-report-${sippPeriod}-${new Date().toISOString().slice(0, 10)}.csv`
     link.click()
     URL.revokeObjectURL(url)
   }
 
   const exportPdf = () => {
+    const { label: periodLabel } = sippPeriodRange()
     const rows = sippReportRows()
       .map(
         (r) => `<tr>
@@ -1189,7 +1243,11 @@ function App() {
           <td>${r.classAndYear}</td>
           <td>${r.hteName}${r.hteAddress ? `<br><span class="muted">${r.hteAddress}</span>` : ''}</td>
           <td>${r.supervisorName}${r.supervisorContact ? `<br><span class="muted">${r.supervisorContact}</span>` : ''}</td>
-          <td>${r.renderedHours} / ${r.requiredHours}</td>
+          <td>${
+            sippPeriod === 'all'
+              ? `${r.renderedHours} / ${r.requiredHours}`
+              : `${r.periodHours}h this period<br><span class="muted">${r.renderedHours} / ${r.requiredHours} total</span>`
+          }</td>
           <td>${r.status}${r.completedAt ? `<br><span class="muted">${r.completedAt}</span>` : ''}</td>
         </tr>`,
       )
@@ -1216,6 +1274,7 @@ function App() {
         <body>
           <h1>OJTrack — Student Internship Placement Program (SIPP) Report</h1>
           <p>College of Engineering, Architecture and Computing, Notre Dame of Marbel University</p>
+          <p class="muted">${sippScopeLabel()} · ${periodLabel}</p>
           <p class="muted">Generated ${new Date().toLocaleString()} by ${user?.displayName || 'Coordinator'}</p>
           <table>
             <thead>
@@ -2562,27 +2621,86 @@ function App() {
     )
   }
 
-  const renderSipp = () => (
-    <div className="module-card">
-      <h3>SIPP report</h3>
-      <p>
-        Export a Student Internship Placement Program summary — student, HTE placement, supervisor contact, hours,
-        and completion status, with a signature block for endorsement.
-      </p>
-      <div className="button-row">
-        <button className="primary-button" onClick={exportPdf}>
-          Export PDF
-        </button>
-        <button className="secondary-button" onClick={exportCsv}>
-          Export CSV
-        </button>
+  const renderSipp = () => {
+    const studentsInBlock = students.filter((s) => sippClassFilter === 'all' || s.classId === sippClassFilter)
+    const includedCount = sippReportRows().length
+    const periodOptions: { key: typeof sippPeriod; label: string }[] = [
+      { key: 'all', label: 'All time' },
+      { key: 'daily', label: 'Daily (today)' },
+      { key: 'weekly', label: 'Weekly (last 7 days)' },
+      { key: 'monthly', label: 'Monthly (last 30 days)' },
+    ]
+
+    return (
+      <div className="module-card">
+        <h3>SIPP report</h3>
+        <p>
+          Export a Student Internship Placement Program summary — student, HTE placement, supervisor contact, hours,
+          and completion status, with a signature block for endorsement.
+        </p>
+
+        <div className="preferences-grid">
+          <label className="preferences-row">
+            <span className="preferences-label">Block</span>
+            <select
+              value={sippClassFilter}
+              onChange={(e) => {
+                setSippClassFilter(e.target.value)
+                setSippStudentFilter('all')
+              }}
+            >
+              <option value="all">All blocks</option>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="preferences-row">
+            <span className="preferences-label">Student</span>
+            <select value={sippStudentFilter} onChange={(e) => setSippStudentFilter(e.target.value)}>
+              <option value="all">All students {sippClassFilter === 'all' ? '' : 'in this block'}</option>
+              {studentsInBlock.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {users[s.userId]?.displayName || users[s.userId]?.studentIdCode || s.userId}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="preferences-row">
+            <span className="preferences-label">Report period</span>
+            <select value={sippPeriod} onChange={(e) => setSippPeriod(e.target.value as typeof sippPeriod)}>
+              {periodOptions.map((opt) => (
+                <option key={opt.key} value={opt.key}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <p className="modal-hint">
+          {includedCount === 0
+            ? 'No students match this selection.'
+            : `${includedCount} student${includedCount === 1 ? '' : 's'} will be included in this export.`}
+        </p>
+
+        <div className="button-row">
+          <button className="primary-button" onClick={exportPdf} disabled={includedCount === 0}>
+            Export PDF
+          </button>
+          <button className="secondary-button" onClick={exportCsv} disabled={includedCount === 0}>
+            Export CSV
+          </button>
+        </div>
+        <p className="modal-hint">
+          Field set is based on standard SIPP placement reporting. Cross-check against the current CMO 104 s. 2017
+          requirements before citing this as fully compliant.
+        </p>
       </div>
-      <p className="modal-hint">
-        Field set is based on standard SIPP placement reporting. Cross-check against the current CMO 104 s. 2017
-        requirements before citing this as fully compliant.
-      </p>
-    </div>
-  )
+    )
+  }
 
   const renderActivityLog = () => (
     <div className="module-card">
