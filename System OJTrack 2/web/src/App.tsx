@@ -13,7 +13,6 @@ import NotificationsBell from './components/NotificationsBell'
 import HteEvaluationForm from './components/HteEvaluationForm'
 import EmptyState from './components/EmptyState'
 import AssignHteModal from './components/AssignHteModal'
-import StudentProfileModal from './components/StudentProfileModal'
 import ConfirmLogoutModal from './components/ConfirmLogoutModal'
 import AttendancePhotoModal from './components/AttendancePhotoModal'
 import ReviewRowList from './components/ReviewRowList'
@@ -194,6 +193,10 @@ const initialUsers: Record<string, UserRecord> = {
   },
 }
 
+/** Hours-progress ring on the student detail page's Overview tab. */
+const STUDENT_RING_RADIUS = 52
+const STUDENT_RING_CIRCUMFERENCE = 2 * Math.PI * STUDENT_RING_RADIUS
+
 const DEFAULT_PREFERENCES: SystemPreferencesRecord = {
   institutionName: 'Notre Dame of Marbel University',
   department: 'CEAC',
@@ -353,6 +356,15 @@ function App() {
   const [editingClass, setEditingClass] = useState<ClassRecord | null>(null)
   const [assigningHte, setAssigningHte] = useState<StudentRecord | null>(null)
   const [viewingStudent, setViewingStudent] = useState<StudentRecord | null>(null)
+  const [studentDetailTab, setStudentDetailTab] = useState<'overview' | 'attendance' | 'reports' | 'documents' | 'portfolio'>(
+    'overview',
+  )
+  const [studentReportTypeFilter, setStudentReportTypeFilter] = useState<'all' | 'daily' | 'weekly' | 'narrative'>('all')
+  const [studentAttendancePeriod, setStudentAttendancePeriod] = useState<'week' | 'month' | 'all'>('week')
+  const [viewingStudentPhoto, setViewingStudentPhoto] = useState(false)
+  const [studentFeedbackMessage, setStudentFeedbackMessage] = useState('')
+  const [sendingStudentFeedback, setSendingStudentFeedback] = useState(false)
+  const [studentFeedbackSent, setStudentFeedbackSent] = useState(false)
   const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'present' | 'pending' | 'absent'>('all')
   const [viewingAttendanceDay, setViewingAttendanceDay] = useState<StudentRecord | null>(null)
   const [newHteName, setNewHteName] = useState('')
@@ -1452,7 +1464,18 @@ function App() {
   const hasUnreadForStudent = (classId: string, studentUserId: string) =>
     notifications.some((n) => !n.read && n.classId === classId && n.studentId === studentUserId)
 
-  /** Same thresholds the Student Profile modal reads (tierFor in StudentProfileModal.tsx). */
+  /** Opens a student's full-page profile, reset to a clean tab/filter state each time. */
+  const openStudent = (student: StudentRecord) => {
+    setStudentDetailTab('overview')
+    setStudentReportTypeFilter('all')
+    setStudentAttendancePeriod('week')
+    setViewingStudentPhoto(false)
+    setStudentFeedbackMessage('')
+    setStudentFeedbackSent(false)
+    setViewingStudent(student)
+  }
+
+  /** Same thresholds the student detail page reads (tierFor in renderStudentDetail). */
   const getComplianceTier = (student: StudentRecord) => {
     const pct = student.requiredHours > 0 ? Math.round((student.renderedHours / student.requiredHours) * 100) : 0
     if (pct >= 80) return { pct, label: 'Active', pillClass: 'status-pill-success', color: 'var(--success)' }
@@ -1461,6 +1484,7 @@ function App() {
   }
 
   const renderClassDetail = (classItem: ClassRecord) => {
+    if (viewingStudent) return renderStudentDetail(viewingStudent)
     const classStudents = students.filter((s) => s.classId === classItem.id)
     const tabs: { key: ClassTab; label: string }[] = [
       { key: 'members', label: 'Members' },
@@ -1570,21 +1594,22 @@ function App() {
                     const name = studentUser?.displayName || 'Unnamed student'
                     const tier = getComplianceTier(student)
                     return (
-                      <tr key={student.id}>
+                      <tr key={student.id} className="member-row" onClick={() => openStudent(student)}>
                         <td>
                           <span className="member-id-cell">
-                            <Avatar name={name} photoUrl={studentUser?.photoUrl} seed={student.userId} size={22} />
+                            <Avatar name={name} photoUrl={studentUser?.photoUrl} seed={student.userId} size={32} />
                             <span className="mono">{studentUser?.studentIdCode || studentUser?.email || student.userId}</span>
                           </span>
                         </td>
                         <td>
-                          <span className="member-name-cell">
+                          <span className="member-name-cell member-name-link">
                             {name}
                             {hasUnreadForStudent(classItem.id, student.userId) && (
                               <span
                                 className="notify-dot"
                                 title="New activity from this student"
-                                onClick={() =>
+                                onClick={(e) => {
+                                  e.stopPropagation()
                                   markStudentNotificationsRead(student.userId, [
                                     'attendance',
                                     'attendance_error',
@@ -1593,7 +1618,7 @@ function App() {
                                     'class_join_request',
                                     'hte_evaluation',
                                   ])
-                                }
+                                }}
                               />
                             )}
                           </span>
@@ -1619,17 +1644,9 @@ function App() {
                           <span className={`status-pill ${tier.pillClass}`}>{tier.label}</span>
                         </td>
                         <td>
-                          <button className="eye-button" title="View student profile" onClick={() => setViewingStudent(student)}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                              <path
-                                d="M2 12C2 12 5.5 5.5 12 5.5C18.5 5.5 22 12 22 12C22 12 18.5 18.5 12 18.5C5.5 18.5 2 12 2 12Z"
-                                stroke="currentColor"
-                                strokeWidth="1.8"
-                                strokeLinejoin="round"
-                              />
-                              <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
-                            </svg>
-                          </button>
+                          <span className="member-row-chevron" aria-hidden="true">
+                            ›
+                          </span>
                         </td>
                       </tr>
                     )
@@ -1989,6 +2006,395 @@ function App() {
           items={portfolioRows}
         />
       </div>
+    )
+  }
+
+  /**
+   * A student's full-page profile — opened from the Members roster (click a
+   * row, Schoology's own Members-list pattern) instead of the small modal
+   * this used to be. Tabbed like a class itself (Overview/Attendance/
+   * Reports/Documents/Portfolio), each tab scoped to just this one student.
+   */
+  const renderStudentDetail = (student: StudentRecord) => {
+    const studentUser = users[student.userId]
+    const name = studentUser?.displayName || 'Unnamed student'
+    const hte = htes.find((h) => h.id === student.assignedHteId)
+    const className = classes.find((c) => c.id === student.classId)?.name || 'Unassigned'
+    const tier = getComplianceTier(student)
+    const clampedPct = Math.min(100, tier.pct)
+    const dashOffset = STUDENT_RING_CIRCUMFERENCE * (1 - clampedPct / 100)
+
+    const tabs: { key: typeof studentDetailTab; label: string }[] = [
+      { key: 'overview', label: 'Overview' },
+      { key: 'attendance', label: 'Attendance' },
+      { key: 'reports', label: 'Reports' },
+      { key: 'documents', label: 'Documents' },
+      { key: 'portfolio', label: 'Portfolio' },
+    ]
+
+    return (
+      <div className="class-detail">
+        <div className="class-detail-header">
+          <button className="class-detail-back" onClick={() => setViewingStudent(null)}>
+            ← Back to Members
+          </button>
+          <div className="profile-identity">
+            {studentUser?.photoUrl ? (
+              <button
+                type="button"
+                className="avatar-click-target"
+                onClick={() => setViewingStudentPhoto(true)}
+                aria-label={`View ${name}'s photo`}
+              >
+                <Avatar name={name} photoUrl={studentUser.photoUrl} seed={student.userId} size={72} />
+              </button>
+            ) : (
+              <Avatar name={name} photoUrl={undefined} seed={student.userId} size={72} />
+            )}
+            <div>
+              <strong className="profile-name">{name}</strong>
+              <span className="mono profile-id">{studentUser?.studentIdCode || studentUser?.email || student.userId}</span>
+              <div className="profile-tags">
+                <span className={`status-pill ${tier.pillClass}`}>{tier.label}</span>
+                <span className="profile-class-tag">{className}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="class-tab-bar">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              className={studentDetailTab === tab.key ? 'class-tab-button active' : 'class-tab-button'}
+              onClick={() => setStudentDetailTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {studentDetailTab === 'overview' && renderStudentOverviewTab(student, studentUser, hte, tier, dashOffset, clampedPct)}
+        {studentDetailTab === 'attendance' && renderStudentAttendanceTab(student)}
+        {studentDetailTab === 'reports' && renderStudentReportsTab(student, name)}
+        {studentDetailTab === 'documents' && renderStudentDocumentsTab(student, name)}
+        {studentDetailTab === 'portfolio' && renderStudentPortfolioTab(student, name)}
+
+        {viewingStudentPhoto && studentUser?.photoUrl && (
+          <PhotoLightbox photoUrl={studentUser.photoUrl} alt={`${name}'s photo`} onClose={() => setViewingStudentPhoto(false)} />
+        )}
+      </div>
+    )
+  }
+
+  const renderStudentOverviewTab = (
+    student: StudentRecord,
+    studentUser: UserRecord | undefined,
+    hte: HteRecord | undefined,
+    tier: { pct: number; label: string; pillClass: string; color: string },
+    dashOffset: number,
+    clampedPct: number,
+  ) => {
+    const name = studentUser?.displayName || 'Unnamed student'
+    return (
+      <div className="module-grid">
+        <section className="module-card">
+          <h3>Details</h3>
+          <div className="profile-field-grid">
+            <div>
+              <span className="profile-field-label">HTE</span>
+              <p>{hte?.name || 'Not assigned'}</p>
+            </div>
+            <div>
+              <span className="profile-field-label">Supervisor</span>
+              <p>{hte?.supervisorName || '—'}</p>
+            </div>
+            <div>
+              <span className="profile-field-label">Email</span>
+              <p>{studentUser?.contactEmail || studentUser?.email || '—'}</p>
+            </div>
+            <div>
+              <span className="profile-field-label">Absences</span>
+              <p>
+                {student.absenceCount ? `${student.absenceCount} total` : 'None recorded'}
+                {!!student.consecutiveAbsenceDays && ` · ${student.consecutiveAbsenceDays} consecutive`}
+              </p>
+            </div>
+          </div>
+
+          <div className="roster-divider" />
+
+          <h4>Hours Progress</h4>
+          <div className="profile-hours-row">
+            <div className="profile-ring">
+              <svg width="120" height="120" viewBox="0 0 120 120">
+                <circle cx="60" cy="60" r={STUDENT_RING_RADIUS} fill="none" stroke="var(--border)" strokeWidth="10" />
+                <circle
+                  cx="60"
+                  cy="60"
+                  r={STUDENT_RING_RADIUS}
+                  fill="none"
+                  stroke={tier.color}
+                  strokeWidth="10"
+                  strokeLinecap="round"
+                  strokeDasharray={STUDENT_RING_CIRCUMFERENCE}
+                  strokeDashoffset={dashOffset}
+                  transform="rotate(-90 60 60)"
+                />
+              </svg>
+              <div className="profile-ring-label">
+                <strong>{clampedPct}%</strong>
+                <span>Complete</span>
+              </div>
+            </div>
+            <div className="profile-hours-detail">
+              <div className="profile-hours-detail-top">
+                <span>Rendered</span>
+                <strong>{student.renderedHours}h</strong>
+              </div>
+              <div className="hrs-progress-track">
+                <div className="hrs-progress-fill" style={{ width: `${clampedPct}%`, background: tier.color }} />
+              </div>
+              <span className="review-meta no-capitalize">of {student.requiredHours}h required</span>
+            </div>
+          </div>
+
+          <div className="roster-divider" />
+
+          <div className="button-row">
+            <button
+              className="secondary-button"
+              onClick={() => {
+                setAssigningHte(student)
+                setViewingStudent(null)
+              }}
+            >
+              {hte ? 'Change HTE' : 'Assign HTE'}
+            </button>
+            <button
+              className="danger-button"
+              onClick={() => {
+                removeStudentFromClass(student)
+                setViewingStudent(null)
+              }}
+            >
+              Remove from class
+            </button>
+          </div>
+        </section>
+
+        <section className="module-card">
+          <h3>Send Feedback</h3>
+          <label className="modal-field">
+            Message to {name}
+            <textarea
+              value={studentFeedbackMessage}
+              onChange={(e) => {
+                setStudentFeedbackMessage(e.target.value)
+                setStudentFeedbackSent(false)
+              }}
+              placeholder="e.g. Great work on your last weekly report — keep it up."
+              rows={4}
+            />
+          </label>
+          <div className="button-row">
+            <button
+              className="primary-button"
+              disabled={!studentFeedbackMessage.trim() || sendingStudentFeedback}
+              onClick={async () => {
+                if (!studentFeedbackMessage.trim()) return
+                setSendingStudentFeedback(true)
+                setStudentFeedbackSent(false)
+                try {
+                  await sendFeedbackToStudent(student.userId, studentFeedbackMessage)
+                  setStudentFeedbackMessage('')
+                  setStudentFeedbackSent(true)
+                } finally {
+                  setSendingStudentFeedback(false)
+                }
+              }}
+            >
+              {sendingStudentFeedback ? 'Sending…' : 'Send Feedback'}
+            </button>
+            {studentFeedbackSent && <span className="preferences-saved-note">Sent</span>}
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  const renderStudentAttendanceTab = (student: StudentRecord) => {
+    const now = new Date()
+    const periodStart = new Date(now)
+    if (studentAttendancePeriod === 'week') periodStart.setDate(periodStart.getDate() - 7)
+    else if (studentAttendancePeriod === 'month') periodStart.setMonth(periodStart.getMonth() - 1)
+    else periodStart.setFullYear(2000) // 'all'
+
+    const logs = attendanceLogs
+      .filter((log) => log.studentId === student.userId)
+      .filter((log) => new Date(formatTimestamp(log.timestamp) || 0) >= periodStart)
+      .sort((a, b) => new Date(formatTimestamp(b.timestamp) || 0).getTime() - new Date(formatTimestamp(a.timestamp) || 0).getTime())
+
+    const periodOptions: { key: typeof studentAttendancePeriod; label: string }[] = [
+      { key: 'week', label: 'This week' },
+      { key: 'month', label: 'This month' },
+      { key: 'all', label: 'All time' },
+    ]
+
+    return (
+      <section className="module-card">
+        <h3>Attendance history</h3>
+        <div className="filter-tabs">
+          {periodOptions.map((opt) => (
+            <button
+              key={opt.key}
+              className={studentAttendancePeriod === opt.key ? 'filter-tab active' : 'filter-tab'}
+              onClick={() => setStudentAttendancePeriod(opt.key)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {logs.length === 0 ? (
+          <EmptyState title="No attendance logs" subtitle="Nothing recorded for this period yet." />
+        ) : (
+          <div className="table-wrap">
+            <table className="members-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Time</th>
+                  <th>Hours</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((log) => (
+                  <tr key={log.id}>
+                    <td>{formatTimestamp(log.timestamp).split(',').slice(0, 2).join(',') || '—'}</td>
+                    <td>{log.type === 'time_in' ? 'Time in' : 'Time out'}</td>
+                    <td>{formatClockTime(log.timestamp)}</td>
+                    <td className="mono">{log.computedHours != null ? `${log.computedHours}h` : '—'}</td>
+                    <td>
+                      <span className={`status-badge status-${log.status}`}>
+                        {log.status}
+                        {log.late ? ' · late' : ''}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  const renderStudentReportsTab = (student: StudentRecord, studentLabel: string) => {
+    const typeOptions: { key: typeof studentReportTypeFilter; label: string }[] = [
+      { key: 'all', label: 'All' },
+      { key: 'daily', label: 'Daily' },
+      { key: 'weekly', label: 'Weekly' },
+      { key: 'narrative', label: 'Narrative' },
+    ]
+    const studentReports = reports
+      .filter((r) => r.studentId === student.userId)
+      .filter((r) => studentReportTypeFilter === 'all' || r.type === studentReportTypeFilter)
+      .sort((a, b) => new Date(formatTimestamp(b.submittedAt) || 0).getTime() - new Date(formatTimestamp(a.submittedAt) || 0).getTime())
+
+    const reportRows: ReviewRow[] = studentReports.map((report) => ({
+      id: report.id,
+      studentLabel,
+      typeLabel: `${report.type.charAt(0).toUpperCase()}${report.type.slice(1)} report`,
+      status: report.status,
+      submittedLabel: `Submitted ${formatTimestamp(report.submittedAt) || 'on an unknown date'}`,
+      content: report.content,
+      fileUrl: report.fileUrl,
+      fileLinkLabel: 'View attachment',
+      onApprove: () => updateReportStatus(report.id, 'approved'),
+      onReject: () => updateReportStatus(report.id, 'rejected'),
+    }))
+
+    return (
+      <div className="module-grid">
+        <section className="module-card">
+          <h3>Filter by type</h3>
+          <div className="filter-tabs">
+            {typeOptions.map((opt) => (
+              <button
+                key={opt.key}
+                className={studentReportTypeFilter === opt.key ? 'filter-tab active' : 'filter-tab'}
+                onClick={() => setStudentReportTypeFilter(opt.key)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </section>
+        <ReviewRowList
+          title={`${studentLabel}'s reports`}
+          subtitle="Daily, weekly, and narrative reports submitted by this student."
+          emptyTitle="No reports submitted"
+          emptySubtitle="Nothing matches this filter yet."
+          items={reportRows}
+        />
+      </div>
+    )
+  }
+
+  const renderStudentDocumentsTab = (student: StudentRecord, studentLabel: string) => {
+    const documentRows: ReviewRow[] = preOjtDocuments
+      .filter((d) => d.studentId === student.userId)
+      .map((document) => ({
+        id: document.id,
+        studentLabel,
+        typeLabel: document.docType,
+        status: document.status,
+        submittedLabel: 'Submitted for review',
+        fileUrl: document.fileUrl,
+        fileLinkLabel: 'View document',
+        onApprove: () => updateDocumentStatus(document.id, 'approved'),
+        onReject: () => updateDocumentStatus(document.id, 'rejected'),
+      }))
+
+    return (
+      <ReviewRowList
+        title={`${studentLabel}'s documents`}
+        subtitle="MOA, waivers, and other onboarding documents."
+        emptyTitle="No documents submitted"
+        emptySubtitle="Documents this student submits will show up here."
+        items={documentRows}
+      />
+    )
+  }
+
+  const renderStudentPortfolioTab = (student: StudentRecord, studentLabel: string) => {
+    const portfolioRows: ReviewRow[] = portfolioItems
+      .filter((item) => item.studentId === student.userId)
+      .sort((a, b) => new Date(formatTimestamp(b.uploadedAt) || 0).getTime() - new Date(formatTimestamp(a.uploadedAt) || 0).getTime())
+      .map((item) => ({
+        id: item.id,
+        studentLabel,
+        typeLabel: item.title,
+        status: item.status,
+        submittedLabel: `Uploaded ${formatTimestamp(item.uploadedAt) || 'on an unknown date'}`,
+        fileUrl: item.fileUrl,
+        fileLinkLabel: 'View item',
+        coordinatorNote: item.coordinatorNote,
+        onApprove: () => updatePortfolioItemStatus(item.id, 'approved'),
+        onRejectWithNote: (note) => updatePortfolioItemStatus(item.id, 'rejected', note || undefined),
+      }))
+
+    return (
+      <ReviewRowList
+        title={`${studentLabel}'s portfolio`}
+        subtitle="Review each item against your portfolio instructions."
+        emptyTitle="No portfolio items yet"
+        emptySubtitle="Items this student adds to their portfolio will show up here."
+        items={portfolioRows}
+      />
     )
   }
 
@@ -2790,25 +3196,6 @@ function App() {
         />
       )}
 
-      {viewingStudent && (
-        <StudentProfileModal
-          student={viewingStudent}
-          studentUser={users[viewingStudent.userId]}
-          hte={htes.find((h) => h.id === viewingStudent.assignedHteId)}
-          className={classes.find((c) => c.id === viewingStudent.classId)?.name || 'Unassigned'}
-          attendanceLogs={attendanceLogs.filter((log) => log.studentId === viewingStudent.userId)}
-          onClose={() => setViewingStudent(null)}
-          onAssignHte={() => {
-            setAssigningHte(viewingStudent)
-            setViewingStudent(null)
-          }}
-          onSendFeedback={(message) => sendFeedbackToStudent(viewingStudent.userId, message)}
-          onRemove={() => {
-            removeStudentFromClass(viewingStudent)
-            setViewingStudent(null)
-          }}
-        />
-      )}
 
       {viewingAttendanceDay &&
         (() => {
